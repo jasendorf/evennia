@@ -47,20 +47,11 @@ data:
     <hr/>
     <p class="lead">A MUD powered by Evennia.</p>
     <p>
-        You can play right in your browser, or connect with a
-        WebSocket-capable MUD client.
+        Jump right in using the browser-based client below.
     </p>
     {% if webclient_enabled %}
     <p><a href="{% url 'webclient:index' %}" class="playbutton">Play in the browser!</a></p>
     {% endif %}
-    <p>
-        <strong>MUD Client (WebSocket):</strong> <code>wss://dorfin.johnasendorf.com/ws</code>
-    </p>
-    <p>
-        Compatible clients include <a href="https://www.mudlet.org/">Mudlet</a>,
-        <a href="https://github.com/LiquidityC/Blightmud">Blightmud</a>, and others
-        with WebSocket support.
-    </p>
 
   init.sh: |
     #!/bin/sh

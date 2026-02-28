@@ -64,14 +64,23 @@ data:
         fi
     fi
 
-    # Run migrations (evennia migrate works fine for this)
+    # All evennia CLI commands check for Account #1 and loop without TTY.
+    # Use Django internals directly to avoid this.
     cd "$GAME_DIR"
-    echo "=== Running migrations ==="
-    evennia migrate
-
-    # Create superuser via Django ORM (evennia createsuperuser ignores --noinput)
-    echo "=== Ensuring superuser exists ==="
     ADMIN_USER=$(cat /secrets/username)
     ADMIN_PASS=$(cat /secrets/password)
-    cd "$GAME_DIR"
-    python -c "import sys,os;sys.path.insert(0,'.');os.environ['DJANGO_SETTINGS_MODULE']='server.conf.settings';import django;django.setup();from evennia.accounts.models import AccountDB;a=AccountDB.objects.filter(id=1);print('Superuser already exists') if a.exists() else (AccountDB.objects.create_superuser('$ADMIN_USER','','$ADMIN_PASS'),print('Superuser created'))"
+    echo "=== Running migrations and ensuring superuser ==="
+    python -c "
+    import sys,os
+    sys.path.insert(0,'.')
+    os.environ['DJANGO_SETTINGS_MODULE']='server.conf.settings'
+    import django;django.setup()
+    from django.core.management import call_command
+    call_command('migrate','--noinput')
+    from evennia.accounts.models import AccountDB
+    if not AccountDB.objects.filter(id=1).exists():
+        AccountDB.objects.create_superuser('$ADMIN_USER','','$ADMIN_PASS')
+        print('Superuser created')
+    else:
+        print('Superuser already exists')
+    "

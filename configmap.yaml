@@ -1,0 +1,68 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: evennia-config
+  namespace: evennia
+data:
+  nginx.conf: |
+    server {
+        listen 80;
+        server_name _;
+
+        location / {
+            proxy_pass http://localhost:4001;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto https;
+        }
+
+        location /ws {
+            proxy_pass http://localhost:4002;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection "Upgrade";
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto https;
+            proxy_read_timeout 86400;
+        }
+    }
+
+  game-settings.py: |
+    # DorfinMUD settings for Kubernetes + Cloudflare Tunnel deployment
+    # Appended to default settings.py by init container
+
+    WEBSOCKET_CLIENT_URL = "wss://dorfin.johnasendorf.com/ws"
+    ALLOWED_HOSTS = ["dorfin.johnasendorf.com", "localhost", "127.0.0.1"]
+    SERVERNAME = "DorfinMUD"
+
+    WEBSERVER_INTERFACES = ["0.0.0.0"]
+    WEBSOCKET_CLIENT_INTERFACE = "0.0.0.0"
+    TELNET_INTERFACES = ["0.0.0.0"]
+
+  init.sh: |
+    #!/bin/sh
+    set -e
+    GAME_DIR="/usr/src/game"
+
+    if [ ! -f "$GAME_DIR/server/conf/settings.py" ]; then
+        echo "=== First-time initialization ==="
+        cd /usr/src
+        evennia --init mygame
+        cp -a /usr/src/mygame/* "$GAME_DIR/"
+        cp -a /usr/src/mygame/.* "$GAME_DIR/" 2>/dev/null || true
+        rm -rf /usr/src/mygame
+        cd "$GAME_DIR"
+        cat /config/game-settings.py >> "$GAME_DIR/server/conf/settings.py"
+        evennia migrate
+        echo "=== Initialization complete ==="
+    else
+        echo "=== Game directory already initialized ==="
+        if ! grep -q "WEBSOCKET_CLIENT_URL" "$GAME_DIR/server/conf/settings.py"; then
+            cat /config/game-settings.py >> "$GAME_DIR/server/conf/settings.py"
+        fi
+        cd "$GAME_DIR"
+        evennia migrate
+    fi

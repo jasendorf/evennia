@@ -28,6 +28,9 @@ spec:
               mountPath: /usr/src/game
             - name: config
               mountPath: /config
+            - name: admin-secret
+              mountPath: /secrets
+              readOnly: true
       containers:
         - name: evennia
           image: evennia/evennia:latest
@@ -84,3 +87,6 @@ spec:
         - name: nginx-config
           configMap:
             name: evennia-config
+        - name: admin-secret
+          secret:
+            secretName: evennia-admin

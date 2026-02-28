@@ -57,6 +57,13 @@ data:
         cd "$GAME_DIR"
         cat /config/game-settings.py >> "$GAME_DIR/server/conf/settings.py"
         evennia migrate
+        echo "=== Creating superuser ==="
+        ADMIN_USER=$(cat /secrets/username)
+        ADMIN_PASS=$(cat /secrets/password)
+        DJANGO_SUPERUSER_USERNAME="$ADMIN_USER" \
+        DJANGO_SUPERUSER_PASSWORD="$ADMIN_PASS" \
+        DJANGO_SUPERUSER_EMAIL="" \
+        evennia createsuperuser --noinput
         echo "=== Initialization complete ==="
     else
         echo "=== Game directory already initialized ==="
@@ -66,3 +73,12 @@ data:
         cd "$GAME_DIR"
         evennia migrate
     fi
+
+    # Ensure superuser exists (idempotent - ignores error if already exists)
+    cd "$GAME_DIR"
+    ADMIN_USER=$(cat /secrets/username)
+    ADMIN_PASS=$(cat /secrets/password)
+    DJANGO_SUPERUSER_USERNAME="$ADMIN_USER" \
+    DJANGO_SUPERUSER_PASSWORD="$ADMIN_PASS" \
+    DJANGO_SUPERUSER_EMAIL="" \
+    evennia createsuperuser --noinput 2>/dev/null || echo "Superuser already exists"

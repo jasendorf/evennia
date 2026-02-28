@@ -56,29 +56,28 @@ data:
         rm -rf /usr/src/mygame
         cd "$GAME_DIR"
         cat /config/game-settings.py >> "$GAME_DIR/server/conf/settings.py"
-        evennia migrate
-        echo "=== Creating superuser ==="
-        ADMIN_USER=$(cat /secrets/username)
-        ADMIN_PASS=$(cat /secrets/password)
-        DJANGO_SUPERUSER_USERNAME="$ADMIN_USER" \
-        DJANGO_SUPERUSER_PASSWORD="$ADMIN_PASS" \
-        DJANGO_SUPERUSER_EMAIL="" \
-        evennia createsuperuser --noinput
         echo "=== Initialization complete ==="
     else
         echo "=== Game directory already initialized ==="
         if ! grep -q "WEBSOCKET_CLIENT_URL" "$GAME_DIR/server/conf/settings.py"; then
             cat /config/game-settings.py >> "$GAME_DIR/server/conf/settings.py"
         fi
-        cd "$GAME_DIR"
-        evennia migrate
     fi
 
-    # Ensure superuser exists (idempotent - ignores error if already exists)
+    # Run migrations using manage.py directly (evennia migrate prompts interactively)
     cd "$GAME_DIR"
+    echo "=== Running migrations ==="
+    python manage.py migrate --noinput
+
+    # Create superuser via Django ORM (evennia createsuperuser ignores --noinput)
+    echo "=== Ensuring superuser exists ==="
     ADMIN_USER=$(cat /secrets/username)
     ADMIN_PASS=$(cat /secrets/password)
-    DJANGO_SUPERUSER_USERNAME="$ADMIN_USER" \
-    DJANGO_SUPERUSER_PASSWORD="$ADMIN_PASS" \
-    DJANGO_SUPERUSER_EMAIL="" \
-    evennia createsuperuser --noinput 2>/dev/null || echo "Superuser already exists"
+    python manage.py shell -c "
+from evennia.accounts.models import AccountDB
+if not AccountDB.objects.filter(id=1).exists():
+    AccountDB.objects.create_superuser('$ADMIN_USER', '', '$ADMIN_PASS')
+    print('Superuser created successfully')
+else:
+    print('Superuser already exists')
+"

@@ -64,13 +64,14 @@ data:
         fi
     fi
 
-    # Run migrations using manage.py directly (evennia migrate prompts interactively)
+    # Run migrations (evennia migrate works fine for this)
     cd "$GAME_DIR"
     echo "=== Running migrations ==="
-    python manage.py migrate --noinput
+    evennia migrate
 
     # Create superuser via Django ORM (evennia createsuperuser ignores --noinput)
     echo "=== Ensuring superuser exists ==="
     ADMIN_USER=$(cat /secrets/username)
     ADMIN_PASS=$(cat /secrets/password)
-    python manage.py shell -c "from evennia.accounts.models import AccountDB; a=AccountDB.objects.filter(id=1); print('Superuser already exists') if a.exists() else (AccountDB.objects.create_superuser('$ADMIN_USER', '', '$ADMIN_PASS'), print('Superuser created'))"
+    cd "$GAME_DIR"
+    python -c "import sys,os;sys.path.insert(0,'.');os.environ['DJANGO_SETTINGS_MODULE']='server.conf.settings';import django;django.setup();from evennia.accounts.models import AccountDB;a=AccountDB.objects.filter(id=1);print('Superuser already exists') if a.exists() else (AccountDB.objects.create_superuser('$ADMIN_USER','','$ADMIN_PASS'),print('Superuser created'))"

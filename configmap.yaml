@@ -73,11 +73,4 @@ data:
     echo "=== Ensuring superuser exists ==="
     ADMIN_USER=$(cat /secrets/username)
     ADMIN_PASS=$(cat /secrets/password)
-    python manage.py shell -c "
-from evennia.accounts.models import AccountDB
-if not AccountDB.objects.filter(id=1).exists():
-    AccountDB.objects.create_superuser('$ADMIN_USER', '', '$ADMIN_PASS')
-    print('Superuser created successfully')
-else:
-    print('Superuser already exists')
-"
+    python manage.py shell -c "from evennia.accounts.models import AccountDB; a=AccountDB.objects.filter(id=1); print('Superuser already exists') if a.exists() else (AccountDB.objects.create_superuser('$ADMIN_USER', '', '$ADMIN_PASS'), print('Superuser created'))"

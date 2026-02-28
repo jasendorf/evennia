@@ -42,6 +42,26 @@ data:
     WEBSOCKET_CLIENT_INTERFACE = "0.0.0.0"
     TELNET_INTERFACES = ["0.0.0.0"]
 
+  main-content.html: |
+    <h1 class="card-title">Welcome to DorfinMUD!</h1>
+    <hr/>
+    <p class="lead">A MUD powered by Evennia.</p>
+    <p>
+        You can play right in your browser, or connect with a
+        WebSocket-capable MUD client.
+    </p>
+    {% if webclient_enabled %}
+    <p><a href="{% url 'webclient:index' %}" class="playbutton">Play in the browser!</a></p>
+    {% endif %}
+    <p>
+        <strong>MUD Client (WebSocket):</strong> <code>wss://dorfin.johnasendorf.com/ws</code>
+    </p>
+    <p>
+        Compatible clients include <a href="https://www.mudlet.org/">Mudlet</a>,
+        <a href="https://github.com/LiquidityC/Blightmud">Blightmud</a>, and others
+        with WebSocket support.
+    </p>
+
   init.sh: |
     #!/bin/sh
     set -e
@@ -63,6 +83,10 @@ data:
             cat /config/game-settings.py >> "$GAME_DIR/server/conf/settings.py"
         fi
     fi
+
+    # Copy custom homepage template
+    mkdir -p "$GAME_DIR/web/templates/website/homepage"
+    cp /config/main-content.html "$GAME_DIR/web/templates/website/homepage/main-content.html"
 
     # All evennia CLI commands check for Account #1 and loop without TTY.
     # Use Django internals directly to avoid this.

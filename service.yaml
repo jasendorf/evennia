@@ -8,6 +8,10 @@ spec:
     - port: 80
       targetPort: 80
       name: http
+    - port: 4000
+      targetPort: 4000
+      nodePort: 31313
+      name: telnet
   selector:
     app: evennia
-  type: ClusterIP
+  type: NodePort

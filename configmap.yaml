@@ -38,6 +38,11 @@ data:
     ALLOWED_HOSTS = ["dorfin.johnasendorf.com", "localhost", "127.0.0.1"]
     SERVERNAME = "DorfinMUD"
 
+    # Override MSSP hostname so MUD clients (Mudlet) don't try to resolve the pod/node hostname
+    MSSP_META_INFO = {
+        "HOSTNAME": "192.168.50.200",
+    }
+
     WEBSERVER_INTERFACES = ["0.0.0.0"]
     WEBSOCKET_CLIENT_INTERFACE = "0.0.0.0"
     TELNET_INTERFACES = ["0.0.0.0"]

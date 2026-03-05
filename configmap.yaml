@@ -36,6 +36,7 @@ data:
 
     WEBSOCKET_CLIENT_URL = "wss://dorfin.johnasendorf.com/ws"
     ALLOWED_HOSTS = ["dorfin.johnasendorf.com", "localhost", "127.0.0.1"]
+    CSRF_TRUSTED_ORIGINS = ['https://dorfin.johnasendorf.com']
     SERVERNAME = "DorfinMUD"
 
     # Override MSSP hostname so MUD clients (Mudlet) don't try to resolve the pod/node hostname

@@ -1,0 +1,14 @@
+---
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  name: gitea-token
+  namespace: evennia
+spec:
+  encryptedData:
+    gitea-token: AgBnG+pZBSxDVTWE3YZudAJ+8fAdd2IvzoKlghvyXxF1pcaCvFzm5O/gywAZvYHbrG71UnbV4QryoKbkGm9MhY8EZnillMihc3PL1l1Cfb3E3Rii2R5EFNr60yWJNP0fZ+Xh85SubJ4Ts6KPnJ+fETUe7Rn5d0H07DeeptTYuAm3ytSFb+Uh9V3BeKiI2nbJNJnK80ALuhbTwUfr/Di4iK+qF441iK4oFqsmEV/LAhzUZ2iAChXXRzLzhJGIRt6VOwiKIjE8cKfka/8fd57J6vEfxSsbq8g3TpyGU71TocwpwOgGlpXEj+1VmKBdVVATFABfD9nl/EpcQesE3MgflO52t7iczKZlnJgUrz6RM/pgb46AxEVwUL3+Uj/3T/P5oZBpftleQZkiapAYeP8ohWDdVXgIZ3s4TUEJ4SmNpNpzbuQOJCJdv/sAQiCCD6kgCluuwxNFphYfaqnrqQaEkI6lER5ffZWG1ayTbGHPoJ6Pk6fSWyvPHaF3rDYivU6dz+I2lPbwLEvtVdgM1aeHlvV9do4OgaSMvcVv0pf6faKRmo8lusGSj708PRxIDa2fdeTeO/14HXFtZ4084ynQ731P5NtqOeNMhJhP0X2Kx3jO44mMwOhHLle44Be8ldYAVvTtxZr79GKnYtu/OU5buHV+ZqD1zAvosgLM9vzJQbXzrWgvMRtWSTlUh0MrI/khJJGl6Fjz2uQ8lRcY7ljyruc6d3tn48mvFfxhEOSgavT+enbMWeaatV5N/eJ8MGU=
+  template:
+    metadata:
+      name: gitea-token
+      namespace: evennia
+    type: Opaque

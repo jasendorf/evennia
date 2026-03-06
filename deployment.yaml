@@ -19,7 +19,7 @@ spec:
       labels:
         app: evennia
       annotations:
-        deployment.dorfin.io/commit: "initial"
+        deployment.dorfin.io/commit: "635277fc46d6824c5ed0212176ee6b0b36ea806a"
     spec:
       initContainers:
         - name: git-sync

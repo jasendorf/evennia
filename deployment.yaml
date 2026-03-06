@@ -20,6 +20,41 @@ spec:
         app: evennia
     spec:
       initContainers:
+        - name: git-sync
+          image: alpine/git:latest
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              REPO_URL="http://$(cat /secrets/gitea-token)@192.168.50.199:30000/lab/evennia"
+              GAME_DIR="/usr/src/game"
+              SYNC_DIR="/usr/src/game-repo"
+
+              echo "=== Syncing game code from Gitea ==="
+              if [ -d "$SYNC_DIR/.git" ]; then
+                cd "$SYNC_DIR"
+                git pull
+              else
+                git clone "$REPO_URL" "$SYNC_DIR"
+              fi
+
+              # Overlay our custom game files onto the PVC
+              # Only runs if the game/ folder exists in the repo
+              if [ -d "$SYNC_DIR/game" ]; then
+                echo "=== Copying custom game files to PVC ==="
+                cp -a "$SYNC_DIR/game/." "$GAME_DIR/"
+                echo "=== Game code sync complete ==="
+              else
+                echo "=== No game/ folder found in repo, skipping overlay ==="
+              fi
+          volumeMounts:
+            - name: game-data
+              mountPath: /usr/src/game
+            - name: repo-cache
+              mountPath: /usr/src/game-repo
+            - name: gitea-token
+              mountPath: /secrets
+              readOnly: true
+
         - name: init-game
           image: evennia/evennia:latest
           command: ["/bin/sh", "/config/init.sh"]
@@ -31,6 +66,7 @@ spec:
             - name: admin-secret
               mountPath: /secrets
               readOnly: true
+
       containers:
         - name: evennia
           image: evennia/evennia:latest
@@ -60,6 +96,7 @@ spec:
             limits:
               memory: "512Mi"
               cpu: "500m"
+
         - name: nginx
           image: nginx:alpine
           ports:
@@ -76,10 +113,13 @@ spec:
             limits:
               memory: "64Mi"
               cpu: "50m"
+
       volumes:
         - name: game-data
           persistentVolumeClaim:
             claimName: evennia-data
+        - name: repo-cache
+          emptyDir: {}
         - name: config
           configMap:
             name: evennia-config
@@ -90,3 +130,6 @@ spec:
         - name: admin-secret
           secret:
             secretName: evennia-admin
+        - name: gitea-token
+          secret:
+            secretName: gitea-token

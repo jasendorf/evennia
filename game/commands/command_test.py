@@ -2,16 +2,15 @@
 Test command - verifies the workflow is working
 """
 
-from evennia.commands.default.mixin_admin import MixinAdminCommand
+from evennia.commands import Command
 
 
-class CmdTest(MixinAdminCommand):
+class CmdTest(Command):
     """Test command to verify the Awtown workflow"""
     
     key = "test"
     aliases = ["@test"]
     help_category = "Testing"
-    locks = "cmd:all()"
 
     def func(self):
         """Execute the test command"""

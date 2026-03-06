@@ -19,19 +19,14 @@ jobs:
         id: commit
         run: |
           COMMIT_SHA=$(git rev-parse HEAD)
-          COMMIT_MSG=$(git log -1 --pretty=%B | head -c 50)
+          COMMIT_MSG=$(git log -1 --pretty=%s)
           echo "sha=$COMMIT_SHA" >> $GITHUB_OUTPUT
           echo "msg=$COMMIT_MSG" >> $GITHUB_OUTPUT
-          echo "Commit SHA: $COMMIT_SHA"
-          echo "Commit Message: $COMMIT_MSG"
 
       - name: Update deployment.yaml with commit hash
         run: |
           COMMIT_SHA=${{ steps.commit.outputs.sha }}
-          # Update the annotation in the pod template metadata
           sed -i "s|deployment\.dorfin\.io/commit:.*|deployment.dorfin.io/commit: \"$COMMIT_SHA\"|" deployment.yaml
-          
-          # Verify the change was made
           grep "deployment.dorfin.io/commit" deployment.yaml
 
       - name: Commit and push updated deployment
@@ -39,12 +34,10 @@ jobs:
           GITEA_TOKEN: ${{ secrets.GITEA_TOKEN }}
         run: |
           COMMIT_SHA=${{ steps.commit.outputs.sha }}
-          COMMIT_MSG=${{ steps.commit.outputs.msg }}
+          COMMIT_MSG="${{ steps.commit.outputs.msg }}"
           git config user.name "Gitea Actions"
           git config user.email "actions@gitea.local"
           git add deployment.yaml
-          git commit -m "$COMMIT_MSG | Update deployment commit hash to $COMMIT_SHA" || echo "No changes to commit"
-          
-          # Push with token auth (using HTTP, not HTTPS)
+          git commit -m "Redeploy: $COMMIT_MSG (SHA: $COMMIT_SHA)"
           git remote set-url origin http://john:${GITEA_TOKEN}@192.168.50.199:30000/lab/evennia.git
           git push origin main

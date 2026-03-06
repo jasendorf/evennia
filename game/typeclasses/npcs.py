@@ -55,3 +55,8 @@ class AwtownNPC(DefaultCharacter):
         NPCs will react to 'say' commands via this hook.
         """
         return super().at_msg_receive(text=text, from_obj=from_obj, **kwargs)
+
+
+# Evennia requires a class named 'Character' in typeclasses.characters.
+# npcs.py is not the default characters module, but we alias here for safety.
+Character = AwtownNPC

@@ -103,3 +103,7 @@ class AwtownCityGate(AwtownGate):
 
     def _auto_close(self):
         pass  # city gates do not auto-close
+
+
+# Evennia requires a class named 'Exit' in typeclasses.exits.
+Exit = AwtownGate

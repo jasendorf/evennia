@@ -93,3 +93,8 @@ class AwtownExteriorRoom(AwtownRoom):
         super().at_object_creation()
         self.db.room_type = "exterior"
         self.db.is_outdoor = True
+
+
+# Evennia requires a class named 'Room' to exist in typeclasses.rooms.
+# We alias it to AwtownRoom so the default typeclass lookup works.
+Room = AwtownRoom

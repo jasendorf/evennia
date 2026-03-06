@@ -43,7 +43,7 @@ jobs:
           git config user.name "Gitea Actions"
           git config user.email "actions@gitea.local"
           git add deployment.yaml
-          git commit -m "$COMMIT_MSG — Update deployment commit hash to $COMMIT_SHA" || echo "No changes to commit"
+          git commit -m "$COMMIT_MSG | Update deployment commit hash to $COMMIT_SHA" || echo "No changes to commit"
           
           # Push with token auth (using HTTP, not HTTPS)
           git remote set-url origin http://john:${GITEA_TOKEN}@192.168.50.199:30000/lab/evennia.git

@@ -2,7 +2,7 @@
 Test command - verifies the workflow is working
 """
 
-from evennia.commands import Command
+from evennia.commands.command import Command
 
 
 class CmdTest(Command):

@@ -18,6 +18,8 @@ spec:
     metadata:
       labels:
         app: evennia
+      annotations:
+        deployment.dorfin.io/commit: "initial"
     spec:
       initContainers:
         - name: git-sync

@@ -1,0 +1,46 @@
+name: Update Commit Hash for Deployment
+
+on:
+  push:
+    paths:
+      - 'game/**'
+      - '.gitea/workflows/update-commit-hash.yaml'
+
+jobs:
+  update-deployment:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Get commit SHA
+        id: commit
+        run: |
+          COMMIT_SHA=$(git rev-parse HEAD)
+          echo "sha=$COMMIT_SHA" >> $GITHUB_OUTPUT
+          echo "Commit SHA: $COMMIT_SHA"
+
+      - name: Update deployment.yaml with commit hash
+        run: |
+          COMMIT_SHA=${{ steps.commit.outputs.sha }}
+          # Update the annotation in the pod template metadata
+          sed -i "s|deployment\.dorfin\.io/commit:.*|deployment.dorfin.io/commit: \"$COMMIT_SHA\"|" deployment.yaml
+          
+          # Verify the change was made
+          grep "deployment.dorfin.io/commit" deployment.yaml
+
+      - name: Commit and push updated deployment
+        env:
+          GITEA_TOKEN: ${{ secrets.GITEA_TOKEN }}
+        run: |
+          COMMIT_SHA=${{ steps.commit.outputs.sha }}
+          git config user.name "Gitea Actions"
+          git config user.email "actions@gitea.local"
+          git add deployment.yaml
+          git commit -m "Update deployment commit hash to $COMMIT_SHA" || echo "No changes to commit"
+          
+          # Push with token auth
+          git remote set-url origin https://john:${GITEA_TOKEN}@192.168.50.199:30000/lab/evennia.git
+          git push origin HEAD:main || git push origin HEAD:$(git rev-parse --abbrev-ref HEAD)

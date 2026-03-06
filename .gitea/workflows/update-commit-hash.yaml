@@ -38,6 +38,7 @@ jobs:
           COMMIT_SHA=${{ steps.commit.outputs.sha }}
           git config user.name "Gitea Actions"
           git config user.email "actions@gitea.local"
+          git config http.sslVerify false
           git add deployment.yaml
           git commit -m "Update deployment commit hash to $COMMIT_SHA" || echo "No changes to commit"
           

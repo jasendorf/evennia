@@ -72,7 +72,8 @@ caller.msg("|y" + "="*60 + "|n")
 
 
 # ===========================================================================
-#CODE BLOCK 1 — Eastern Commons (New Player Landing Zone)
+#CODE
+# --- BLOCK 1 — Eastern Commons (New Player Landing Zone) ---
 # ===========================================================================
 caller.msg("\n|c--- Exterior: Eastern Commons ---|n")
 
@@ -155,7 +156,7 @@ link(W["eastern_commons"], "southeast", W["toll_stone"],       "northwest")
 
 
 # ===========================================================================
-#CODE BLOCK 2 — Gates
+# --- BLOCK 2 — Gates ---
 # ===========================================================================
 caller.msg("\n|c--- Gates ---|n")
 
@@ -204,7 +205,7 @@ link(W["eastern_commons"], "west", W["grand_gate"], "east")
 
 
 # ===========================================================================
-#CODE BLOCK 3 — Dusty Paddock (West Stables /4)
+# --- BLOCK 3 — Dusty Paddock (West Stables /4) ---
 # ===========================================================================
 caller.msg("\n|c--- Exterior: Dusty Paddock (Stables) ---|n")
 
@@ -283,7 +284,7 @@ link(W["dusty_paddock"], "southeast", W["stable_yard"],    "northwest")
 
 
 # ===========================================================================
-#CODE BLOCK 4 — Garden of Remembrance (South /4)
+# --- BLOCK 4 — Garden of Remembrance (South /4) ---
 # ===========================================================================
 caller.msg("\n|c--- Exterior: Garden of Remembrance ---|n")
 
@@ -375,7 +376,7 @@ link(W["garden_remembrance"], "southeast", W["willow_grove"],       "northwest")
 
 
 # ===========================================================================
-#CODE BLOCK 5 — Founder's Walk (Main North Road, E-W)
+# --- BLOCK 5 — Founder's Walk (Main North Road, E-W) ---
 # ===========================================================================
 caller.msg("\n|c--- Roads: Founder's Walk ---|n")
 
@@ -432,7 +433,7 @@ link(W["founders_walk_east"],    "east", W["grand_gate"],            "west")
 
 
 # ===========================================================================
-#CODE BLOCK 6 — North Row: Administrative District
+# --- BLOCK 6 — North Row: Administrative District ---
 # ===========================================================================
 caller.msg("\n|c--- Buildings: Administrative District ---|n")
 
@@ -525,7 +526,7 @@ link(W["founders_walk_central"], "north", W["artificers_post"],  "south")
 
 
 # ===========================================================================
-#CODE BLOCK 7 — Founders' Offices
+# --- BLOCK 7 — Founders' Offices ---
 # ===========================================================================
 caller.msg("\n|c--- Buildings: Founders' Offices ---|n")
 
@@ -583,7 +584,7 @@ link(W["founders_walk_east"], "northwest", W["oldmeres_study"],      "southeast"
 
 
 # ===========================================================================
-#CODE BLOCK 8 — Herald's Hall & Assembly Hall
+# --- BLOCK 8 — Herald's Hall & Assembly Hall ---
 # ===========================================================================
 caller.msg("\n|c--- Buildings: Entry District ---|n")
 
@@ -628,7 +629,7 @@ link(W["heralds_hall"], "west",  W["founders_walk_east"], "east")
 
 
 # ===========================================================================
-#CODE BLOCK 9 — Templegate Lane & Temple of the Eternal Flame (/4)
+# --- BLOCK 9 — Templegate Lane & Temple of the Eternal Flame (/4) ---
 # ===========================================================================
 caller.msg("\n|c--- Roads & Temple: Templegate Lane ---|n")
 
@@ -736,7 +737,7 @@ link(W["temple_nave"],            "southwest", W["temple_bell_tower"],     "nort
 
 
 # ===========================================================================
-#CODE BLOCK 10 — Market Row (Middle E-W Road)
+# --- BLOCK 10 — Market Row (Middle E-W Road) ---
 # ===========================================================================
 caller.msg("\n|c--- Roads: Market Row ---|n")
 
@@ -775,7 +776,7 @@ link(W["market_row_east"],       "east", W["heralds_hall"],     "west")
 
 
 # ===========================================================================
-#CODE BLOCK 11 — Vault of Gold, Assay Office, Crystal Repository
+# --- BLOCK 11 — Vault of Gold, Assay Office, Crystal Repository ---
 # ===========================================================================
 caller.msg("\n|c--- Buildings: Financial District ---|n")
 
@@ -833,7 +834,7 @@ link(W["market_row_east"],  "south", W["crystal_repository"], "north")
 
 
 # ===========================================================================
-#CODE BLOCK 12 — Outfitter's Rest
+# --- BLOCK 12 — Outfitter's Rest ---
 # ===========================================================================
 caller.msg("\n|c--- Buildings: Outfitter's Rest ---|n")
 
@@ -860,7 +861,7 @@ link(W["outfitters_rest"], "west",  W["oldmeres_study"],  "east")
 
 
 # ===========================================================================
-#CODE BLOCK 13 — Hearthstone Inn (/4)
+# --- BLOCK 13 — Hearthstone Inn (/4) ---
 # ===========================================================================
 caller.msg("\n|c--- Buildings: Hearthstone Inn ---|n")
 
@@ -954,7 +955,7 @@ link(W["hearthstone_inn"],  "southeast", W["the_cellar"],      "northwest")
 
 
 # ===========================================================================
-#CODE BLOCK 14 — Warden's Way (N-S Road) & West District Buildings
+# --- BLOCK 14 — Warden's Way (N-S Road) & West District Buildings ---
 # ===========================================================================
 caller.msg("\n|c--- Roads: Warden's Way ---|n")
 
@@ -1054,7 +1055,7 @@ link(W["wardens_way_central"], "south", W["posting_board"],       "north")
 
 
 # ===========================================================================
-#CODE BLOCK 15 — Warden's Barracks
+# --- BLOCK 15 — Warden's Barracks ---
 # ===========================================================================
 caller.msg("\n|c--- Buildings: Warden's Barracks ---|n")
 
@@ -1080,7 +1081,7 @@ link(W["wardens_barracks"], "east",  W["wardens_way_north"], "west")
 
 
 # ===========================================================================
-#CODE BLOCK 16 — Craftsman's Road (Bottom E-W)
+# --- BLOCK 16 — Craftsman's Road (Bottom E-W) ---
 # ===========================================================================
 caller.msg("\n|c--- Roads: Craftsman's Road ---|n")
 
@@ -1119,7 +1120,7 @@ link(W["craftsmans_road_east"], "south", W["south_gate"],           "north")
 
 
 # ===========================================================================
-#CODE BLOCK 17 — Grand Forge (/4)
+# --- BLOCK 17 — Grand Forge (/4) ---
 # ===========================================================================
 caller.msg("\n|c--- Buildings: Grand Forge ---|n")
 
@@ -1215,7 +1216,7 @@ link(W["grand_forge"],          "southeast", W["alchemists_corner"], "northwest"
 
 
 # ===========================================================================
-#CODE BLOCK 18 — Tinker's Den
+# --- BLOCK 18 — Tinker's Den ---
 # ===========================================================================
 caller.msg("\n|c--- Buildings: Tinker's Den ---|n")
 
@@ -1242,7 +1243,7 @@ link(W["grand_forge"],          "east",  W["tinkers_den"], "west")
 
 
 # ===========================================================================
-#CODE BLOCK 19 — South Row: Training & Specialist Buildings
+# --- BLOCK 19 — South Row: Training & Specialist Buildings ---
 # ===========================================================================
 caller.msg("\n|c--- Buildings: South Row ---|n")
 
@@ -1341,7 +1342,7 @@ link(W["herbalists_nook"],      "east",  W["apprentice_hall"],   "west")
 
 
 # ===========================================================================
-#CODE BLOCK 20 — Washhouses, Pantry, Supply Room
+# --- BLOCK 20 — Washhouses, Pantry, Supply Room ---
 # ===========================================================================
 caller.msg("\n|c--- Buildings: Washhouses & Storage ---|n")
 
@@ -1409,7 +1410,7 @@ link(W["wardens_way_central"], "northeast", W["supply_room"],     "southwest")
 
 
 # ===========================================================================
-#CODE BLOCK 21 — Watchtower & The Precipice
+# --- BLOCK 21 — Watchtower & The Precipice ---
 # ===========================================================================
 caller.msg("\n|c--- Buildings: Watchtower & Precipice ---|n")
 
@@ -1457,7 +1458,7 @@ link(W["watchtower"],           "up",   W["the_precipice"], "down")
 
 
 # ===========================================================================
-#CODE BLOCK 22 — Final Report
+# --- BLOCK 22 — Final Report ---
 # ===========================================================================
 
 caller.msg("\n|y" + "="*60 + "|n")

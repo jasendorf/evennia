@@ -47,6 +47,8 @@ data:
     WEBSERVER_INTERFACES = ["0.0.0.0"]
     WEBSOCKET_CLIENT_INTERFACE = "0.0.0.0"
     TELNET_INTERFACES = ["0.0.0.0"]
+    START_LOCATION = "#86"
+    DEFAULT_HOME   = "#171"
 
   main-content.html: |
     <h1 class="card-title">Welcome to DorfinMUD!</h1>

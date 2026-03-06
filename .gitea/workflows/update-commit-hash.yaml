@@ -47,4 +47,4 @@ jobs:
           
           # Push with token auth (using HTTP, not HTTPS)
           git remote set-url origin http://john:${GITEA_TOKEN}@192.168.50.199:30000/lab/evennia.git
-          git push origin HEAD:main || git push origin HEAD:$(git rev-parse --abbrev-ref HEAD)
+          git push origin main

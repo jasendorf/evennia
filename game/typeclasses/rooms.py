@@ -1,245 +1,95 @@
 """
-DorfinMUD — Custom Room Typeclass
-===================================
-All rooms in the game should use this typeclass (or a subclass of it).
-It establishes the base attribute set that systems like shops, day/night,
-combat, crafting, and weather will read from.
+Awtown Room typeclasses.
 
-Room types (db.room_type):
-    "road"       — outdoor street/path segment
-    "gate"       — entry/exit point between areas
-    "exterior"   — outdoor open area (commons, stables, garden)
-    "courtyard"  — open-air but enclosed (Crystal Repository)
-    "building"   — generic interior
-    "inn"        — Hearthstone Inn rooms
-    "temple"     — Temple of the Eternal Flame rooms
-    "crafting"   — Grand Forge / Tinker's Den / Alchemist's Corner
-    "training"   — Apprentice Hall / Study Hall
-    "lookout"    — Watchtower / The Precipice
-    "founder"    — Founders' offices (Malgrave, Hammerfall, Oldmere)
+Hierarchy:
+    AwtownRoom          — base for all Awtown rooms (safe, building by default)
+    AwtownRoadRoom      — road segments (outdoor)
+    AwtownCourtyardRoom — teal courtyards (outdoor)
+    AwtownExteriorRoom  — /4 exterior sets: stables, commons, garden (outdoor)
 """
 
-from evennia import DefaultRoom
+from evennia.objects.objects import DefaultRoom
 
 
-class Room(DefaultRoom):
+class AwtownRoom(DefaultRoom):
     """
-    Base room for all DorfinMUD locations.
+    Base room typeclass for all rooms in Awtown.
 
-    Attributes set at creation (all overridable in batch script):
+    db Attributes:
+        is_safe   (bool) : No PvP, no aggressive mobs. Default True.
+        room_type (str)  : Category hint — "building", "road", "courtyard", "exterior".
+        is_outdoor(bool) : Whether weather/time messages apply. Default False.
+        desc_day  (str)  : Optional description override during game daytime (hours 6-19).
+        desc_night(str)  : Optional description override during game night (hours 20-5).
 
-    Identification
-        zone        (str)   — area name, e.g. "awtown", "wilds"
-        room_type   (str)   — category string (see module docstring)
-
-    Environment
-        is_outdoor  (bool)  — exposed to weather / sky
-        is_safe     (bool)  — no PvP, no hostile mob spawns
-        light_level (int)   — 0 (pitch black) to 5 (full daylight)
-        desc_night  (str)   — alternate description shown at night
-                              (empty string = use default desc always)
-
-    Services
-        shop_npc    (int)   — dbref# of the NPC running a shop here, or None
-        trainer_npc (int)   — dbref# of a class/skill trainer here, or None
-        rest_bonus  (int)   — HP/MP recovery rate multiplier (0 = no bonus)
-                              1 = minor (washhouse), 2 = normal (inn room),
-                              3 = premium (future: private room)
-
-    Gameplay
-        no_teleport (bool)  — block teleport in/out (locked rooms, etc.)
-        encounter_table (str) — name of the encounter table to use,
-                                or None for no random encounters
-
-    Flavor
-        ambient     (list)  — list of ambient message strings shown randomly
-                              to players in the room (empty = none)
+    If desc_day / desc_night are empty strings, the standard db.desc is always used.
     """
 
     def at_object_creation(self):
-        """Called once when the room is first created."""
         super().at_object_creation()
-
-        # --- Identification ---
-        self.db.zone = "unset"
-        self.db.room_type = "building"
-
-        # --- Environment ---
-        self.db.is_outdoor = False
         self.db.is_safe = True
-        self.db.light_level = 4          # well-lit interior default
-        self.db.desc_night = ""          # empty = no alternate night desc
+        self.db.room_type = "building"
+        self.db.is_outdoor = False
+        self.db.desc_day = ""
+        self.db.desc_night = ""
 
-        # --- Services ---
-        self.db.shop_npc = None
-        self.db.trainer_npc = None
-        self.db.rest_bonus = 0
-
-        # --- Gameplay ---
-        self.db.no_teleport = False
-        self.db.encounter_table = None
-
-        # --- Flavor ---
-        self.db.ambient = []
-
-    def get_display_desc(self, looker, **kwargs):
+    def return_appearance(self, looker, **kwargs):
         """
-        Return the room description. If it is 'night' in the game world
-        and desc_night is set, return that instead of the default desc.
-
-        The day/night system will set a server-level flag when implemented.
-        For now this just returns the default desc.
+        Injects day/night description when one is set.
+        Falls back to db.desc when no time-specific override is defined.
         """
-        # Future hook: check global day/night flag here
-        # from world.time_system import is_night
-        # if is_night() and self.db.desc_night:
-        #     return self.db.desc_night
-        return super().get_display_desc(looker, **kwargs)
+        desc_day = self.db.desc_day or ""
+        desc_night = self.db.desc_night or ""
 
-    def at_object_receive(self, moved_obj, source_location, move_type="move", **kwargs):
-        """
-        Called when something arrives in this room.
-        Hook point for: encounter triggers, ambient greetings, zone entry
-        messages, etc.
-        """
-        super().at_object_receive(moved_obj, source_location,
-                                  move_type=move_type, **kwargs)
-        # Future: trigger ambient NPC greetings, zone transition messages, etc.
+        if desc_day or desc_night:
+            try:
+                from evennia.utils import gametime
+                secs = int(gametime.gametime())
+                # Treat a full game-day as 86400 real seconds for now.
+                # Phase 4 will introduce a proper game-clock multiplier.
+                hour = (secs % 86400) // 3600
+                is_day = 6 <= hour < 20
+            except Exception:
+                is_day = True
 
-    def at_object_leave(self, moved_obj, target_location, move_type="move", **kwargs):
-        """
-        Called when something leaves this room.
-        Hook point for: encounter checks on exit, guild tracking, etc.
-        """
-        super().at_object_leave(moved_obj, target_location,
-                                move_type=move_type, **kwargs)
+            original = self.db.desc
+            if is_day and desc_day:
+                self.db.desc = desc_day
+            elif not is_day and desc_night:
+                self.db.desc = desc_night
 
+            result = super().return_appearance(looker, **kwargs)
+            self.db.desc = original
+            return result
 
-# ---------------------------------------------------------------------------
-# Specialised subclasses
-# ---------------------------------------------------------------------------
-
-class OutdoorRoom(Room):
-    """
-    Convenience subclass for outdoor rooms.
-    Sets is_outdoor=True and light_level=5 by default.
-    Used for: roads, exterior areas, gates, courtyards.
-    """
-
-    def at_object_creation(self):
-        super().at_object_creation()
-        self.db.is_outdoor = True
-        self.db.light_level = 5          # full daylight outdoors
+        return super().return_appearance(looker, **kwargs)
 
 
-class RoadRoom(OutdoorRoom):
-    """
-    A named road segment. Outdoor, safe, no services.
-    Used for: Founder's Walk, Market Row, Craftsman's Road, etc.
-    """
+class AwtownRoadRoom(AwtownRoom):
+    """A road segment. Always outdoor, always safe."""
 
     def at_object_creation(self):
         super().at_object_creation()
         self.db.room_type = "road"
+        self.db.is_outdoor = True
 
 
-class GateRoom(OutdoorRoom):
-    """
-    A gate or entry point. Outdoor, safe.
-    Guards typically present; may be flagged no_teleport in future.
-    """
+class AwtownCourtyardRoom(AwtownRoom):
+    """An open courtyard (teal rooms on the map). Outdoor, safe."""
 
     def at_object_creation(self):
         super().at_object_creation()
-        self.db.room_type = "gate"
+        self.db.room_type = "courtyard"
+        self.db.is_outdoor = True
 
 
-class ExteriorRoom(OutdoorRoom):
+class AwtownExteriorRoom(AwtownRoom):
     """
-    An open exterior area: commons, stables, gardens.
-    Outdoor, generally safe. May have encounter tables in wilds.
+    Exterior /4 room sets: Dusty Paddock, Eastern Commons, Garden of Remembrance.
+    Outdoor, safe. The Garden receives night-specific descs for undead events (Phase 4).
     """
 
     def at_object_creation(self):
         super().at_object_creation()
         self.db.room_type = "exterior"
-
-
-class CourtyardRoom(OutdoorRoom):
-    """
-    Open-air but enclosed: Crystal Repository, etc.
-    Outdoor for weather purposes, but sheltered feel.
-    """
-
-    def at_object_creation(self):
-        super().at_object_creation()
-        self.db.room_type = "courtyard"
-        self.db.light_level = 4          # slightly sheltered
-
-
-class InnRoom(Room):
-    """
-    Hearthstone Inn rooms. Rest bonus active.
-    """
-
-    def at_object_creation(self):
-        super().at_object_creation()
-        self.db.room_type = "inn"
-        self.db.rest_bonus = 2
-
-
-class TempleRoom(Room):
-    """
-    Temple of the Eternal Flame rooms. Safe, minor rest bonus.
-    Future: healing modifier, resurrection anchor point.
-    """
-
-    def at_object_creation(self):
-        super().at_object_creation()
-        self.db.room_type = "temple"
-        self.db.rest_bonus = 1
-
-
-class CraftingRoom(Room):
-    """
-    Forge / workshop rooms. Safe, crafting stations present.
-    Future: crafting_stations list attribute.
-    """
-
-    def at_object_creation(self):
-        super().at_object_creation()
-        self.db.room_type = "crafting"
-        self.db.crafting_stations = []   # populated when workstations are built
-
-
-class TrainingRoom(Room):
-    """
-    Apprentice Hall, Study Hall. Safe, training-specific.
-    Future: available_skills list, training cost modifier.
-    """
-
-    def at_object_creation(self):
-        super().at_object_creation()
-        self.db.room_type = "training"
-
-
-class FounderRoom(Room):
-    """
-    Founder offices. Safe. Buff-granting NPCs present.
-    Future: buff_npc reference, cooldown tracking.
-    """
-
-    def at_object_creation(self):
-        super().at_object_creation()
-        self.db.room_type = "founder"
-
-
-class LookoutRoom(OutdoorRoom):
-    """
-    High vantage points: Watchtower, The Precipice.
-    Outdoor. Future: reveals map areas, trigger scouting skill checks.
-    """
-
-    def at_object_creation(self):
-        super().at_object_creation()
-        self.db.room_type = "lookout"
+        self.db.is_outdoor = True

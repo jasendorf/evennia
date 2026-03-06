@@ -1,1113 +1,1018 @@
 """
-DorfinMUD — Awtown World Builder
-=================================
+batch_awtown.py  —  DorfinMUD Awtown world builder
 Run with:  @batchcode world.batch_awtown
 
-All /4 room sets are strict 2x2 grids:
-    NW <-e/w-> NE
-     |          |
-    n/s        n/s
-     |          |
-    SW <-e/w-> SE
-
-Each room connects only to its two cardinal neighbors.
-No hub rooms. No diagonal exits.
+Creates all 103 rooms, exits (including gated orange connectors), and NPCs.
 """
 
-# ---------------------------------------------------------------------------
-#HEADER
-# ---------------------------------------------------------------------------
+# HEADER
 
+import evennia
 from evennia import create_object
-from typeclasses.rooms import (
-    Room, RoadRoom, GateRoom, ExteriorRoom, CourtyardRoom,
-    InnRoom, TempleRoom, CraftingRoom, TrainingRoom, FounderRoom, LookoutRoom,
-)
-from typeclasses.exits import Exit
+from evennia.objects.objects import DefaultExit
 
-DIR_ALIASES = {
-    "north":     ["n"],
-    "south":     ["s"],
-    "east":      ["e"],
-    "west":      ["w"],
-    "northwest": ["nw"],
-    "northeast": ["ne"],
-    "southwest": ["sw"],
-    "southeast": ["se"],
-    "up":        ["u"],
-    "down":      ["d"],
+from typeclasses.rooms import AwtownRoom, AwtownRoadRoom, AwtownCourtyardRoom, AwtownExteriorRoom
+from typeclasses.exits import AwtownGate, AwtownCityGate
+from typeclasses.npcs import AwtownNPC
+
+ROOM_TAG = "awtown_dbkey"
+NPC_TAG  = "awtown_npc"
+
+TC_MAP = {
+    "road":      AwtownRoadRoom,
+    "courtyard": AwtownCourtyardRoom,
+    "exterior":  AwtownExteriorRoom,
+    "building":  AwtownRoom,
 }
 
-def room(typeclass, key, desc, zone="awtown", **kwargs):
-    r = create_object(typeclass, key=key)
-    r.db.desc = desc
-    r.db.zone = zone
-    for attr, val in kwargs.items():
-        setattr(r.db, attr, val)
-    caller.msg(f"|g  Created:|n {key} [{typeclass.__name__}] {r.dbref}")
-    return r
-
-def exit(name, from_room, to_room):
-    aliases = DIR_ALIASES.get(name, [])
-    create_object(Exit, key=name, aliases=aliases,
-                  location=from_room, destination=to_room)
-
-def link(room_a, dir_ab, room_b, dir_ba):
-    exit(dir_ab, room_a, room_b)
-    exit(dir_ba, room_b, room_a)
-
-W = {}
-
-caller.msg("|y" + "="*60 + "|n")
-caller.msg("|wDorfinMUD — Building Awtown|n")
-caller.msg("|y" + "="*60 + "|n")
-
-
-# ===========================================================================
-#CODE
-
-# ---------------------------------------------------------------------------
-# SECTION 1 — Eastern Commons (/4)
-#
-#   Wayfarers' Green (NW) <-e/w-> Cart Market (NE)
-#          n/s                          n/s
-#   Notice Board (SW)    <-e/w-> Toll Stone (SE)
-#
-#   Entry: Grand Gate --east--> Wayfarers' Green (NW, west side of grid)
-# ---------------------------------------------------------------------------
-caller.msg("\n|c--- Exterior: Eastern Commons (/4) ---|n")
-
-W["wayfarers_green"] = room(
-    ExteriorRoom, "The Wayfarers' Green",
-    """|gA patch of worn but welcoming grass spreads beneath a broad oak tree.|n
-
-The first thing most travelers see arriving from Awtown's Grand Gate to the west.
-Bedrolls, campfires, and quiet conversations fill the space. A weathered sign
-reads: |w"Rest your feet. The road will wait."|n
-
-The cart market lies to the east; the notice board is to the south.
-""",
-    ambient=["A group of travelers huddles around a small fire.",
-             "Someone sharpens a blade with slow, rhythmic strokes."])
-
-W["cart_market"] = room(
-    ExteriorRoom, "The Cart Market",
-    """|yA row of wooden carts and canvas stalls lines the eastern edge of the commons.|n
-
-Traveling merchants hawk goods of dubious provenance. Trader Moss watches you
-with a merchant's appraising eye. The green lies to the west; the Toll Stone
-is to the south.
-""",
-    ambient=["A merchant shouts something about a 'once in a lifetime' price.",
-             "The smell of spiced sausage drifts from somewhere."])
-
-W["notice_board"] = room(
-    ExteriorRoom, "The Crossroads Notice Board",
-    """|wA massive oak board, weathered but sturdy, stands at the crossroads.|n
-
-Layers of parchment, nailed notices, and hand-scrawled rumors cover every inch.
-The Wayfarers' Green is to the north; the Toll Stone lies to the east.
-""",
-    ambient=["Someone reads a notice, tears it down, and pockets it."])
-
-W["toll_stone"] = room(
-    ExteriorRoom, "The Toll Stone",
-    """|wA crumbling stone pillar marks the old boundary of Awtown.|n
-
-The founding date of Dorfin is carved into its face. Tollkeeper Renwick leans
-against it with the patience of a man surprised by nothing. The notice board
-is to the west; the cart market lies to the north.
-""")
-
-#  2x2 grid connections
-link(W["wayfarers_green"], "east",  W["cart_market"],  "west")   # NW <-> NE
-link(W["notice_board"],    "east",  W["toll_stone"],   "west")   # SW <-> SE
-link(W["wayfarers_green"], "south", W["notice_board"], "north")  # NW <-> SW
-link(W["cart_market"],     "south", W["toll_stone"],   "north")  # NE <-> SE
-
-
-# ---------------------------------------------------------------------------
-# SECTION 2 — Gates
-# ---------------------------------------------------------------------------
-caller.msg("\n|c--- Gates ---|n")
-
-W["grand_gate"] = room(
-    GateRoom, "The Grand Gate",
-    """|wTwo iron-banded oak doors stand open in the great arched gateway.|n
-
-Guards in polished town livery flank the arch. Carved above:
-|w"Leave lesser than you arrived."|n
-
-To the east lies the open commons. To the west, Founder's Walk and Awtown.
-""",
-    ambient=["A cart rumbles through with a cheerful wave.",
-             "A guard stamps their feet and straightens up."])
-
-W["wardens_gate"] = room(
-    GateRoom, "The Warden's Gate",
-    """|wA sturdy western gate, less grand than the main entrance but no less solid.|n
-
-Warden Crabb eyes every arrival with deep suspicion. Locals pass through with
-a nod; strangers get the full once-over. The stables lie to the west; Founder's
-Walk stretches to the east.
-""")
-
-W["south_gate"] = room(
-    GateRoom, "The South Gate",
-    """|wA quiet gate at the southern end of Awtown, rarely busy.|n
-
-The ironwork is entwined with carved vines. Gate Hand Birch leans against the
-post with a book open, looking up with mild curiosity. Craftsman's Road is to
-the north; the Garden of Remembrance lies to the south.
-""")
-
-link(W["wayfarers_green"], "west", W["grand_gate"], "east")
-
-
-# ---------------------------------------------------------------------------
-# SECTION 3 — Dusty Paddock (/4)
-#
-#   North Stables (NW) <-e/w-> South Stables (NE)
-#          n/s                        n/s
-#   Tack Room (SW)    <-e/w-> Stable Yard (SE)
-#
-#   Entry: Warden's Gate --west--> North Stables (NW, east side of grid)
-#   Note: "North" and "South" in the stable names refer to their position
-#         within the paddock, not their map direction.
-# ---------------------------------------------------------------------------
-caller.msg("\n|c--- Exterior: Dusty Paddock (/4) ---|n")
-
-W["north_stables"] = room(
-    ExteriorRoom, "The North Stables",
-    """|yLong rows of well-kept stalls stretch the length of this wing.|n
-
-Horses from across Dorfin stand groomed and quiet. Stableman Oswin moves
-methodically from stall to stall. The Warden's Gate lies to the east; the
-south stables are further west; the tack room is to the south.
-""",
-    ambient=["A horse nuzzles your sleeve.",
-             "Oswin mutters reassuringly to a nervous roan."])
-
-W["south_stables"] = room(
-    ExteriorRoom, "The South Stables",
-    """|yThe working wing of the paddock — pack animals and common mounts.|n
-
-Less polished than the north stables, but clean and functional. The north
-stables are to the east; the stable yard lies to the south.
-""")
-
-W["tack_room"] = room(
-    ExteriorRoom, "The Tack Room",
-    """|wEvery wall is hung with saddles, bridles, and riding gear.|n
-
-The smell of leather oil is thick enough to taste. The north stables are
-to the north; the stable yard lies to the east.
-""")
-
-W["stable_yard"] = room(
-    ExteriorRoom, "The Stable Yard",
-    """|yAn open cobbled yard where horses are walked, watered, and traded.|n
-
-Groom Pip darts between animals with infinite pockets full of carrots. The
-tack room is to the west; the south stables lie to the north.
-""",
-    ambient=["Groom Pip produces a carrot and holds it out.",
-             "A merchant haggles over a spotted mare."])
-
-#  2x2 grid connections
-link(W["north_stables"], "west",  W["south_stables"], "east")   # NW <-> NE
-link(W["tack_room"],     "east",  W["stable_yard"],   "west")   # SW <-> SE
-link(W["north_stables"], "south", W["tack_room"],     "north")  # NW <-> SW
-link(W["south_stables"], "south", W["stable_yard"],   "north")  # NE <-> SE
-
-link(W["wardens_gate"], "west", W["north_stables"], "east")
-
-
-# ---------------------------------------------------------------------------
-# SECTION 4 — Garden of Remembrance (/4)
-#
-#   Memorial Garden (NW) <-e/w-> Old Graves (NE)
-#          n/s                        n/s
-#   Reflecting Pool (SW) <-e/w-> Willow Grove (SE)
-#
-#   Entry: South Gate --south--> Memorial Garden (NW, north side of grid)
-# ---------------------------------------------------------------------------
-caller.msg("\n|c--- Exterior: Garden of Remembrance (/4) ---|n")
-
-W["memorial_garden"] = room(
-    ExteriorRoom, "The Memorial Garden",
-    """|gCarefully tended flower beds surround small monuments to fallen heroes.|n
-
-Groundskeeper Enid knows the name on every stone. The South Gate lies to the
-north; the Old Graves are to the east; the Reflecting Pool is to the south.
-""",
-    ambient=["Enid pauses at one stone longer than the others."])
-
-W["old_graves"] = room(
-    ExteriorRoom, "The Old Graves",
-    """|wWeathered headstones lean at varied angles. The inscriptions are cryptic.|n
-
-The oldest stones predate the founding records. At night, something stirs here.
-The Memorial Garden lies to the west; the Willow Grove is to the south.
-""",
-    is_safe=False,
-    desc_night="|wThe shadows between the stones are wrong at night. Don't look directly at them.|n",
-    ambient=["Fresh flowers sit on one old grave. No one saw who left them."])
-
-W["reflecting_pool"] = room(
-    ExteriorRoom, "The Reflecting Pool",
-    """|cA still, dark pool surrounded by weeping willows.|n
-
-Those who stare long enough claim to see things. A hooded figure sits motionless
-at the water's edge and has never been seen to move. The Memorial Garden is to
-the north; the Willow Grove lies to the east.
-""",
-    ambient=["The surface ripples once. There is no wind.",
-             "The hooded figure is exactly where it was when you arrived."])
-
-W["willow_grove"] = room(
-    ExteriorRoom, "The Willow Grove",
-    """|gAncient willows cluster here, branches trailing the ground.|n
-
-The air smells of damp earth and something faintly sweet. Rare plants grow here
-that grow nowhere else in Awtown. The Old Graves lie to the north; the Reflecting
-Pool is to the west.
-""",
-    ambient=["A rare herb grows at the base of one willow, overlooked by most."])
-
-#  2x2 grid connections
-link(W["memorial_garden"], "east",  W["old_graves"],      "west")   # NW <-> NE
-link(W["reflecting_pool"], "east",  W["willow_grove"],    "west")   # SW <-> SE
-link(W["memorial_garden"], "south", W["reflecting_pool"], "north")  # NW <-> SW
-link(W["old_graves"],      "south", W["willow_grove"],    "north")  # NE <-> SE
-
-link(W["south_gate"], "south", W["memorial_garden"], "north")
-
-
-# ---------------------------------------------------------------------------
-# SECTION 5 — Founder's Walk (E-W spine road)
-# ---------------------------------------------------------------------------
-caller.msg("\n|c--- Roads: Founder's Walk ---|n")
-
-W["founders_walk_west"] = room(
-    RoadRoom, "Along Founder's Walk (West)",
-    """|cThe western stretch of Awtown's grandest road.|n
-
-The cobblestones are swept clean each morning. The Warden's Gate is to the west.
-Administrative buildings line both sides of the road.
-""",
-    ambient=["A town guard nods as they pass on their rounds.",
-             "Two officials argue quietly, stopping when they notice you."])
-
-W["founders_walk_central"] = room(
-    RoadRoom, "Along Founder's Walk (Central)",
-    """|cThe heart of Founder's Walk, where the road widens slightly.|n
-
-Roads branch south toward the Temple. The sound of hammers drifts from the east.
-""",
-    ambient=["A pilgrim hurries south toward the Temple.",
-             "One cobblestone was replaced slightly wrong. Someone knows who did it."])
-
-W["founders_walk_east"] = room(
-    RoadRoom, "Along Founder's Walk (East)",
-    """|cThe eastern stretch of Founder's Walk, near the Founders' own offices.|n
-
-The Workshop and Parlour are to the north. The Herald's Hall lies further east.
-""",
-    ambient=["Machine oil drifts faintly from Hammerfall's Workshop.",
-             "Someone exits Malgrave's Parlour looking noticeably more motivated."])
-
-link(W["wardens_gate"],          "east", W["founders_walk_west"],    "west")
-link(W["founders_walk_west"],    "east", W["founders_walk_central"], "west")
-link(W["founders_walk_central"], "east", W["founders_walk_east"],    "west")
-
-
-# ---------------------------------------------------------------------------
-# SECTION 6 — North Row: Administrative District
-#  Runs east-west above Founder's Walk.
-#  FW West --north--> Notary (west end of row)
-#  FW Central --north--> Artificer's Post (east end of row, creates a loop)
-# ---------------------------------------------------------------------------
-caller.msg("\n|c--- Buildings: Administrative District ---|n")
-
-W["notary_office"] = room(
-    Room, "The Notary's Office",
-    """|wA cramped but tidy office. The smell of ink and wax seals never leaves.|n
-
-Notary Prim sits behind a desk stacked with documents, ink-stained to the elbows.
-Founder's Walk is to the south; the Messenger's Roost lies to the east.
-""",
-    ambient=["The scratch of Prim's quill is the only sound.",
-             "A fresh wax seal cools on the desk."])
-
-W["messengers_roost"] = room(
-    Room, "The Messenger's Roost",
-    """|wA small, busy room that smells of feathers and leather satchels.|n
-
-Postmaster Wren never stands still for more than two seconds. The Notary's
-Office is to the west; the Shadow Chamber lies to the east.
-""",
-    ambient=["A runner bursts in, hands off a packet, and is gone.",
-             "A bird fixes you with one bright eye."])
-
-W["shadow_chamber"] = room(
-    Room, "The Shadow Chamber",
-    """|wA plain, unremarkable room most people walk past without noticing.|n
-
-A round table. Six chairs. No windows. The silence here is occupied, not empty.
-The door locks from the inside. The Messenger's Roost is to the west; the
-Steward's Hall lies to the east.
-""",
-    no_teleport=True, light_level=2,
-    ambient=["The silence in here is complete."])
-
-W["stewards_hall"] = room(
-    Room, "The Steward's Hall",
-    """|wA tidy administrative office of bulletin boards and supply manifests.|n
-
-Steward Pell moves with the efficiency of someone who has turned organization
-into an art form. The Shadow Chamber is to the west; the Artificer's Post
-lies to the east.
-""",
-    ambient=["Pell crosses something off a list and adds two more things."])
-
-W["artificers_post"] = room(
-    Room, "The Artificer's Post",
-    """|wA bright, cluttered workshop where broken things come to be fixed.|n
-
-Tinker Cogsworth talks constantly. Apprentice Sprocket watches something bubble
-in the corner with growing concern. Founder's Walk is to the south; the
-Steward's Hall lies to the west.
-""",
-    ambient=["Cogsworth finishes a sentence and immediately starts another.",
-             "Something in the corner makes a sound it shouldn't."])
-
-link(W["founders_walk_west"],    "north", W["notary_office"],    "south")
-link(W["notary_office"],         "east",  W["messengers_roost"], "west")
-link(W["messengers_roost"],      "east",  W["shadow_chamber"],   "west")
-link(W["shadow_chamber"],        "east",  W["stewards_hall"],    "west")
-link(W["stewards_hall"],         "east",  W["artificers_post"],  "west")
-link(W["founders_walk_central"], "north", W["artificers_post"],  "south")
-
-
-# ---------------------------------------------------------------------------
-# SECTION 7 — Founders' Offices
-#  Hammerfall is north of FW East.
-#  Malgrave is east of Hammerfall (same north row).
-#  Oldmere's Study connects south to Market Row East.
-# ---------------------------------------------------------------------------
-caller.msg("\n|c--- Buildings: Founders' Offices ---|n")
-
-W["hammerfall_workshop"] = room(
-    FounderRoom, "Hammerfall's Workshop",
-    """|rAbsolute chaos. Every surface covered in half-built devices and diagrams.|n
-
-Marro Hammerfall doesn't look up. He's elbow-deep in something important. The
-smell of oil and hot metal is immediate. Founder's Walk is to the south;
-Malgrave's Parlour lies to the east.
-""",
-    ambient=["Hammerfall grunts. Greeting or approval — hard to say.",
-             "Something hisses, spins, and stops. He doesn't react."])
-
-W["malgraves_parlour"] = room(
-    FounderRoom, "Malgrave's Parlour",
-    """|yA warm, welcoming office that always feels slightly busy.|n
-
-A |w"You've Got This!"|n pennant hangs slightly crooked above the door. Jorvyn
-Malgrave is already looking at you like he was expecting you. Hammerfall's
-Workshop lies to the west.
-""",
-    ambient=["Malgrave straightens papers, unsatisfied, and straightens them again.",
-             "The pennant sways. There is no draft."])
-
-W["oldmeres_study"] = room(
-    FounderRoom, "Oldmere's Study",
-    """|bFloor-to-ceiling shelves of books, maps, scrolls, and documents.|n
-
-A single clear desk sits at the center, always with an open book. Joleth Oldmere
-looks up with the expression of someone who just remembered something they needed
-to tell you forty-five minutes ago. Market Row is to the south.
-""",
-    ambient=["Oldmere finds the exact book she wants without looking.",
-             "A stack of scrolls shifts. Nothing falls. The system holds."])
-
-link(W["founders_walk_east"], "north", W["hammerfall_workshop"], "south")
-link(W["hammerfall_workshop"],"east",  W["malgraves_parlour"],   "west")
-
-
-# ---------------------------------------------------------------------------
-# SECTION 8 — Herald's Hall, Assembly Hall, Outfitter's Rest
-#  Chain: FW East --east--> Herald's Hall --east--> Grand Gate --east--> Wayfarers' Green
-#  Herald's Hall --south--> Assembly Hall
-#  Assembly Hall --west--> Outfitter's Rest --west--> Oldmere's Study
-# ---------------------------------------------------------------------------
-caller.msg("\n|c--- Buildings: Entry District ---|n")
-
-W["heralds_hall"] = room(
-    Room, "The Herald's Hall",
-    """|yHigh ceilings, bright torchlight, and a roaring fireplace welcome you.|n
-
-This is the first room most adventurers see inside Awtown. A large |wQuest Board|n
-dominates one wall. Herald Bramwick is already halfway across the room toward you.
-Founder's Walk is to the west; the Grand Gate lies to the east.
-
-|c[Quest Board here. Town maps from Scribe Dilly.]|n
-""",
-    ambient=["Bramwick greets a new arrival by name before they've said a word.",
-             "A fresh notice has been pinned to the Quest Board.",
-             "The fire crackles. Someone has just stoked it."])
-
-W["assembly_hall"] = room(
-    Room, "The Assembly Hall",
-    """|wA grand vaulted chamber of stone and dark wood.|n
-
-Rows of benches face a raised speaking dais. Portraits of the three Founders
-regard the room with varying degrees of approval. The Herald's Hall is to
-the north; the Outfitter's Rest lies to the west.
-""",
-    ambient=["Your footsteps echo strangely under the vaulted ceiling.",
-             "Malgrave's portrait has been slightly reframed. Nobody admits it."])
-
-W["outfitters_rest"] = room(
-    Room, "The Outfitter's Rest",
-    """|yA cozy shop with overstuffed chairs and warm golden light.|n
-
-Shopkeep Marta fusses over every customer. New adventurers may claim a free
-starter kit here — clothing, torch, rations. The Assembly Hall is to the east;
-Oldmere's Study lies to the west.
-
-|c[New characters may claim a free starter kit here, once.]|n
-""",
-    rest_bonus=1,
-    ambient=["Marta presses travel biscuits into someone's hand before they can refuse.",
-             "The chairs here are extremely comfortable. This is not an accident."])
-
-link(W["founders_walk_east"], "east",  W["heralds_hall"],    "west")
-link(W["heralds_hall"],       "east",  W["grand_gate"],      "west")
-link(W["heralds_hall"],       "south", W["assembly_hall"],   "north")
-link(W["assembly_hall"],      "west",  W["outfitters_rest"], "east")
-link(W["outfitters_rest"],    "west",  W["oldmeres_study"],  "east")
-
-
-# ---------------------------------------------------------------------------
-# SECTION 9 — Templegate Lane & Temple of the Eternal Flame (/4)
-#
-#   Nave (NW)       <-e/w-> Sanctuary (NE)
-#      n/s                       n/s
-#   Vestry (SW)     <-e/w-> Bell Tower (SE)
-#
-#   Entry: Templegate Lane South --south--> Nave (NW, north-west corner)
-#   Oldmere's Study connects south to Market Row East.
-# ---------------------------------------------------------------------------
-caller.msg("\n|c--- Roads & Temple: Templegate Lane ---|n")
-
-W["templegate_lane_north"] = room(
-    RoadRoom, "Templegate Lane (North)",
-    """|yA short, well-worn stretch running south off Founder's Walk.|n
-
-Small lanterns flicker at the junction. The faint smell of incense drifts up
-from the south. Founder's Walk is to the north.
-""",
-    ambient=["A pilgrim moves past in silence, eyes forward.",
-             "A lantern overhead gutters and steadies."])
-
-W["templegate_lane_south"] = room(
-    RoadRoom, "Templegate Lane (South)",
-    """|yThe lane widens slightly as it approaches the Temple doors.|n
-
-Carved pillars mark the entrance to the south. A donation bowl sits unattended
-by the door, reliably and mysteriously full. Market Row branches to the east.
-""")
-
-link(W["founders_walk_central"],  "south", W["templegate_lane_north"], "north")
-link(W["templegate_lane_north"],  "south", W["templegate_lane_south"], "north")
-
-W["temple_nave"] = room(
-    TempleRoom, "The Temple — The Nave",
-    """|wA soaring vaulted ceiling rises above rows of worn pews.|n
-
-At the altar, an eternal flame burns in a brass bowl that has never been empty.
-High Priest Edwyn Lux moves between the pews with unhurried purpose. The lane
-is to the north; the Sanctuary lies to the east; the Vestry is to the south.
-""",
-    rest_bonus=1,
-    ambient=["The eternal flame flickers once, then burns steady.",
-             "A quiet prayer is murmured somewhere in the pews."])
-
-W["temple_sanctuary"] = room(
-    TempleRoom, "The Temple — The Sanctuary",
-    """|cQuiet and candlelit, this wing smells of herbs and clean linen.|n
-
-Sister Sera hums softly as she works. Whatever the injury, things will improve
-here. They usually do. The Nave is to the west; the Bell Tower is to the south.
-""",
-    rest_bonus=2,
-    ambient=["Sister Sera changes a dressing with practiced, gentle hands.",
-             "The candles here never seem to burn down."])
-
-W["temple_vestry"] = room(
-    TempleRoom, "The Temple — The Vestry",
-    """|wRobes hang in precise rows. Prayer texts stacked by faith and use.|n
-
-Brother Aldwin sits at his desk and will not look up until you speak. Cleric
-training happens here, on Aldwin's terms. The Nave is to the north; the Bell
-Tower lies to the east.
-""",
-    trainer_npc=None,
-    ambient=["Aldwin's quill stops. He reads what he wrote. He continues."])
-
-W["temple_bell_tower"] = room(
-    TempleRoom, "The Temple — The Bell Tower",
-    """|wA narrow staircase leads to this small, wind-swept chamber.|n
-
-The bell hasn't rung in years — by choice. Paladin-Warden Thane Dusk trains
-here. He will teach others. He expects dedication. The Sanctuary is to the
-north; the Vestry lies to the west.
-""",
-    is_outdoor=True, light_level=5, trainer_npc=None,
-    ambient=["The wind up here is constant and cold.",
-             "Dusk's sword returns to guard so smoothly the motion seems continuous."])
-
-#  2x2 grid connections
-link(W["temple_nave"],      "east",  W["temple_sanctuary"],  "west")   # NW <-> NE
-link(W["temple_vestry"],    "east",  W["temple_bell_tower"], "west")   # SW <-> SE
-link(W["temple_nave"],      "south", W["temple_vestry"],     "north")  # NW <-> SW
-link(W["temple_sanctuary"], "south", W["temple_bell_tower"], "north")  # NE <-> SE
-
-link(W["templegate_lane_south"], "south", W["temple_nave"], "north")
-
-
-# ---------------------------------------------------------------------------
-# SECTION 10 — Market Row (E-W middle road)
-#  West end off Templegate Lane South.
-#  Market Row East connects north to Oldmere's Study.
-# ---------------------------------------------------------------------------
-caller.msg("\n|c--- Roads: Market Row ---|n")
-
-W["market_row_west"] = room(
-    RoadRoom, "Market Row (West)",
-    """|yThe western stretch of Awtown's busiest commercial road.|n
-
-The smell of fresh bread drifts from the Hearthstone to the north. Templegate
-Lane branches to the west. The Vault of Gold lies to the south.
-""",
-    ambient=["A merchant haggles. Both parties seem to be enjoying it.",
-             "The smell of fresh bread is genuinely distracting."])
-
-W["market_row_east"] = room(
-    RoadRoom, "Market Row (East)",
-    """|yThe eastern stretch of Market Row, near the bank district.|n
-
-The clink of gold from the Vault carries clearly. Oldmere's Study is to the
-north; the Crystal Repository lies to the south.
-""",
-    ambient=["Someone exits the Vault looking satisfied. Briefly."])
-
-link(W["templegate_lane_south"], "east",  W["market_row_west"], "west")
-link(W["market_row_west"],       "east",  W["market_row_east"], "west")
-link(W["market_row_east"],       "north", W["oldmeres_study"],  "south")
-
-
-# ---------------------------------------------------------------------------
-# SECTION 11 — Financial District: Vault, Assay Office, Crystal Repository
-#  South of Market Row, chained east.
-#  Vault south of MR West; Crystal south of MR East (creates a loop).
-# ---------------------------------------------------------------------------
-caller.msg("\n|c--- Buildings: Financial District ---|n")
-
-W["vault_of_gold"] = room(
-    Room, "The Vault of Gold",
-    """|wA squat stone building with a heavy iron door and barred windows.|n
-
-Banker Guildred Copperpot stands at the counter, precise as a decimal point.
-Vault Guard Holt stands by the door, silent as an axiom. Market Row is to
-the north; the Assay Office lies to the east.
-""",
-    ambient=["Copperpot recounts a stack of coins. Same total. He recounts again.",
-             "Holt has not moved in some time."])
-
-W["assay_office"] = room(
-    Room, "The Assay Office",
-    """|wA clean, well-lit room of scales, magnifying lenses, and testing trays.|n
-
-Assayer Dunt has never given an incorrect valuation. He will not start today.
-The Vault of Gold is to the west; the Crystal Repository lies to the east.
-""",
-    ambient=["Dunt holds a gem to the light and makes a sound of appreciation."])
-
-W["crystal_repository"] = room(
-    CourtyardRoom, "The Crystal Repository",
-    """|cAn open stone courtyard enclosed by tall walls.|n
-
-At its center, a humming crystal formation pulses with soft light. Archivist
-Quellan whispers to the crystals when he thinks no one is watching. Market Row
-is to the north; the Assay Office lies to the west.
-""",
-    ambient=["The crystals hum at a frequency you feel more than hear.",
-             "Quellan whispers to the central crystal. It pulses in response."])
-
-link(W["market_row_west"],  "south", W["vault_of_gold"],      "north")
-link(W["vault_of_gold"],    "east",  W["assay_office"],       "west")
-link(W["assay_office"],     "east",  W["crystal_repository"], "west")
-link(W["market_row_east"],  "south", W["crystal_repository"], "north")
-
-
-# ---------------------------------------------------------------------------
-# SECTION 12 — Hearthstone Inn (/4)
-#
-#   Common Room (NW) <-e/w-> Kitchen (NE)
-#          n/s                    n/s
-#   Private Snug (SW)<-e/w-> Cellar (SE)
-#
-#   Entry: Market Row West --north--> Common Room (NW, street-facing)
-# ---------------------------------------------------------------------------
-caller.msg("\n|c--- Buildings: Hearthstone Inn (/4) ---|n")
-
-W["common_room"] = room(
-    InnRoom, "The Hearthstone — The Common Room",
-    """|yThe main tavern floor: crowded benches, a roaring hearth, the bar.|n
-
-Barkeep Finn serves without spilling a drop while holding three conversations.
-Lute-player Cobble is in the corner doing something technically musical. Market
-Row is to the south; the Kitchen lies to the east; the Private Snug is south.
-""",
-    rest_bonus=2,
-    ambient=["Finn slides a drink down the bar. It stops exactly right.",
-             "Cobble hits a wrong note, recovers, pretends it was intentional.",
-             "Two locals argue about something that happened fifteen years ago."])
-
-W["the_kitchen"] = room(
-    InnRoom, "The Hearthstone — The Kitchen",
-    """|rCook Darra runs this kitchen with iron efficiency and zero tolerance.|n
-
-The food is exceptional. The atmosphere for uninvited visitors is not. Darra
-will share her opinions about this, at volume. The Common Room is to the west;
-the Cellar lies to the south.
-""",
-    ambient=["Something sizzles. The smell is outstanding.",
-             "Darra notices you looking. Her expression says: wrong room."])
-
-W["private_snug"] = room(
-    InnRoom, "The Hearthstone — The Private Snug",
-    """|wCurtained booths line this quieter back room.|n
-
-For private meetings, shady deals, and eavesdropping. A Suspicious Figure
-occupies one booth — different figure than last week, same booth. The Common
-Room is to the north; the Cellar lies to the east.
-""",
-    light_level=2,
-    ambient=["Someone speaks very quietly. You catch one word: 'tonight.'"])
-
-W["the_cellar"] = room(
-    InnRoom, "The Hearthstone — The Cellar",
-    """|wStone stairs lead down to a barrel-lined cellar, dark and cold.|n
-
-There is, behind the oldest barrels in the back corner, a door that shouldn't
-be here. No one who works here will discuss it. The Kitchen is to the north;
-the Private Snug lies to the west.
-""",
-    light_level=1, is_safe=False,
-    ambient=["Something drips in the dark.",
-             "The door in the corner is still there."])
-
-#  2x2 grid connections
-link(W["common_room"],   "east",  W["the_kitchen"],  "west")   # NW <-> NE
-link(W["private_snug"],  "east",  W["the_cellar"],   "west")   # SW <-> SE
-link(W["common_room"],   "south", W["private_snug"], "north")  # NW <-> SW
-link(W["the_kitchen"],   "south", W["the_cellar"],   "north")  # NE <-> SE
-
-link(W["market_row_west"], "north", W["common_room"], "south")
-
-
-# ---------------------------------------------------------------------------
-# SECTION 13 — Warden's Way (N-S road) & West District Buildings
-# ---------------------------------------------------------------------------
-caller.msg("\n|c--- Roads: Warden's Way ---|n")
-
-W["wardens_way_north"] = room(
-    RoadRoom, "Along Warden's Way (North)",
-    """|5A quieter road, favored by craftsmen avoiding Founder's Walk.|n
-
-The paving stones are uneven but solid. Founder's Walk is to the north; the
-central stretch lies to the south. The Warden's Barracks are to the west.
-""",
-    ambient=["A craftsman passes with a bundle of timber."])
-
-W["wardens_way_central"] = room(
-    RoadRoom, "Along Warden's Way (Central)",
-    """|5The middle stretch of Warden's Way — lighter foot traffic.|n
-
-The Round Table meeting room is to the west. The distant ring of the forge
-drifts from the south. Craftsman's Road lies to the south.
-""")
-
-link(W["founders_walk_west"],   "south", W["wardens_way_north"],   "north")
-link(W["wardens_way_north"],    "south", W["wardens_way_central"], "north")
-
-caller.msg("\n|c--- Buildings: West District ---|n")
-
-W["deed_hall"] = room(
-    Room, "The Deed Hall",
-    """|wA narrow room lined with filing cabinets and land registry scrolls.|n
-
-Registrar Voss can produce any document within thirty seconds. Warden's Way
-is to the east; the Quartermaster's Cache lies to the north.
-""",
-    ambient=["The filing system is either genius or deeply personal."])
-
-W["quartermaster_cache"] = room(
-    Room, "The Quartermaster's Cache",
-    """|wA tidy storeroom of boxes, crates, and meticulously labeled barrels.|n
-
-Quartermaster Hobb requires a signed manifest in triplicate. The Deed Hall
-is to the south; the Pantry lies to the east.
-""",
-    ambient=["Hobb checks a list, makes a mark, checks it again."])
-
-W["pantry"] = room(
-    Room, "The Pantry",
-    """|wA small, cool room with stone walls and a heavy door.|n
-
-Nan keeps everything orderly and sells rations without eye contact. This is
-not unfriendliness. It is efficiency. The Quartermaster's Cache is to the west;
-the Supply Room lies to the east.
-""",
-    ambient=["Nan straightens a row of ration packs that were already straight."])
-
-W["supply_room"] = room(
-    Room, "The Supply Room",
-    """|wA general overflow storage room. Things end up here when there's nowhere else.|n
-
-Stock Boy Fen has a system. He will explain it. The explanation will not help.
-The Pantry is to the west; Warden's Way is to the south.
-""",
-    ambient=["A crate is labelled 'MISC — DO NOT OPEN'. Fen doesn't remember why."])
-
-W["round_table"] = room(
-    Room, "The Round Table",
-    """|yA small comfortable room centered on an actual round table.|n
-
-Guild Registrar Brom will mention the table more than once. It is genuinely
-round. He made a point of it. Warden's Way is to the east; the Posting Board
-lies to the south.
-""",
-    ambient=["Brom glances at the table with quiet satisfaction."])
-
-W["posting_board"] = room(
-    Room, "The Posting Board",
-    """|yA public room dominated by an enormous cork board.|n
-
-Board-Keeper Sal will post anything for a coin, tear it down for two — no
-opinions expressed. The Round Table is to the north; Warden's Way is to the east.
-""",
-    ambient=["Someone pins a new notice. Sal doesn't look up.",
-             "A wanted poster at the edge catches your eye."])
-
-W["washhouse_north"] = room(
-    Room, "The Washhouse (North)",
-    """|cWarm water, clean towels, and soap that smells of lavender.|n
-
-A surprising luxury. The dirt of the road comes off here. Warden's Way is
-to the west; the Washhouse South lies below on the southern stretch.
-""",
-    rest_bonus=1,
-    ambient=["Someone leaves looking measurably better than when they arrived."])
-
-W["washhouse_south"] = room(
-    Room, "The Washhouse (South)",
-    """|cThe southern washhouse — same warm water, same lavender soap.|n
-
-For the convenience of crafting district workers who carry more industrial grime.
-Warden's Way is to the west.
-""",
-    rest_bonus=1)
-
-link(W["wardens_way_north"],   "west",  W["deed_hall"],           "east")
-link(W["deed_hall"],           "north", W["quartermaster_cache"], "south")
-link(W["quartermaster_cache"], "east",  W["pantry"],              "west")
-link(W["pantry"],              "east",  W["supply_room"],         "west")
-link(W["supply_room"],         "south", W["wardens_way_north"],   "north")   # loop back
-link(W["wardens_way_central"], "west",  W["round_table"],         "east")
-link(W["round_table"],         "south", W["posting_board"],       "north")
-link(W["wardens_way_north"],   "east",  W["washhouse_north"],     "west")
-link(W["wardens_way_central"], "east",  W["washhouse_south"],     "west")
-
-
-# ---------------------------------------------------------------------------
-# SECTION 14 — Warden's Barracks
-# ---------------------------------------------------------------------------
-caller.msg("\n|c--- Buildings: Warden's Barracks ---|n")
-
-W["wardens_barracks"] = room(
-    Room, "The Warden's Barracks",
-    """|wA long practical room of leather polish and cold iron.|n
-
-Bunk frames line one wall; weapons racks line the other. Sergeant Dorn runs
-drills here affectionately. The Warden's Gate is to the north; Warden's Way
-lies to the east.
-""",
-    trainer_npc=None,
-    ambient=["Guard Recruit Pip polishes a helmet clearly too large for him.",
-             "Sergeant Dorn corrects someone's stance with one word and a look."])
-
-link(W["wardens_gate"],     "south", W["wardens_barracks"],  "north")
-link(W["wardens_barracks"], "east",  W["wardens_way_north"], "west")
-
-
-# ---------------------------------------------------------------------------
-# SECTION 15 — Craftsman's Road (E-W bottom road)
-# ---------------------------------------------------------------------------
-caller.msg("\n|c--- Roads: Craftsman's Road ---|n")
-
-W["craftsmans_road_west"] = room(
-    RoadRoom, "Craftsman's Road (West)",
-    """|rThe western stretch of the southern road — dusty and purposeful.|n
-
-The ring of hammers is never far. Warden's Way is to the north; the eastern
-stretch lies ahead. The Watchtower is to the west; the Herbalist's Nook is
-to the south.
-""",
-    ambient=["A cart loaded with raw timber rumbles past.",
-             "The smell of hot metal is stronger here."])
-
-W["craftsmans_road_east"] = room(
-    RoadRoom, "Craftsman's Road (East)",
-    """|rThe eastern stretch, near the forge complex and the South Gate.|n
-
-The Grand Forge's heat can be felt from here on warm days. The South Gate
-lies to the east; the Iron Forge is to the south.
-""",
-    ambient=["Sparks drift briefly from somewhere in the forge complex."])
-
-link(W["wardens_way_central"],  "south", W["craftsmans_road_west"], "north")
-link(W["craftsmans_road_west"], "east",  W["craftsmans_road_east"], "west")
-link(W["craftsmans_road_east"], "east",  W["south_gate"],           "west")
-
-
-# ---------------------------------------------------------------------------
-# SECTION 16 — Grand Forge (/4)
-#
-#   Iron Forge (NW)  <-e/w-> Workbench (NE)
-#          n/s                    n/s
-#   Loom Room (SW)   <-e/w-> Alchemist's Corner (SE)
-#
-#   Entry: Craftsman's Road East --south--> Iron Forge (NW, road-facing corner)
-# ---------------------------------------------------------------------------
-caller.msg("\n|c--- Buildings: Grand Forge (/4) ---|n")
-
-W["iron_forge"] = room(
-    CraftingRoom, "The Grand Forge — The Iron Forge",
-    """|rA thundering forge with massive bellows and an ever-burning flame.|n
-
-Master Smith Brondal Ironmark works at the central anvil with total certainty.
-Craftsman's Road is to the north; the Workbench lies to the east; the Loom
-Room is to the south.
-""",
-    trainer_npc=None,
-    ambient=["The hammer falls. The metal rings. This happens again.",
-             "Brondal examines a blade edge and makes a sound of approval."])
-
-W["workbench"] = room(
-    CraftingRoom, "The Grand Forge — The Workbench",
-    """|yFragrant cedar and leather fill this bright workshop.|n
-
-Bows, shields, and saddles in progress cover every surface. Carpenter Wynn
-hums cheerfully. The Iron Forge is to the west; the Alchemist's Corner lies
-to the south.
-""",
-    trainer_npc=None,
-    ambient=["Wynn whistles something tuneless and cheerful.",
-             "The smell of fresh-cut cedar is exceptional."])
-
-W["loom_room"] = room(
-    CraftingRoom, "The Grand Forge — The Loom Room",
-    """|mThe quietest workshop — a relative term here.|n
-
-Weaver Mira works with a focus that treats a single misaligned thread as a
-personal failing. She has never had one. The Iron Forge is to the north; the
-Alchemist's Corner lies to the east.
-""",
-    trainer_npc=None,
-    ambient=["The loom moves with hypnotic rhythm.",
-             "Mira holds cloth to the light, satisfied, then finds one flaw."])
-
-W["alchemists_corner"] = room(
-    CraftingRoom, "The Grand Forge — The Alchemist's Corner",
-    """|gBubbling vials, impossible smells, and the scent of scorched eyebrow.|n
-
-Alchemist Sable Dross works happily distracted, thinking about three other things
-at once. The Workbench is to the north; the Loom Room lies to the west.
-""",
-    trainer_npc=None,
-    ambient=["Something pops. Sable Dross doesn't look up.",
-             "A vial changes color. Sable makes a note."])
-
-#  2x2 grid connections
-link(W["iron_forge"],    "east",  W["workbench"],          "west")   # NW <-> NE
-link(W["loom_room"],     "east",  W["alchemists_corner"],  "west")   # SW <-> SE
-link(W["iron_forge"],    "south", W["loom_room"],          "north")  # NW <-> SW
-link(W["workbench"],     "south", W["alchemists_corner"],  "north")  # NE <-> SE
-
-link(W["craftsmans_road_east"], "south", W["iron_forge"], "north")
-
-
-# ---------------------------------------------------------------------------
-# SECTION 17 — Tinker's Den
-# ---------------------------------------------------------------------------
-caller.msg("\n|c--- Buildings: Tinker's Den ---|n")
-
-W["tinkers_den"] = room(
-    CraftingRoom, "The Tinker's Den",
-    """|wGears, springs, lenses, and gadgets hang from every surface.|n
-
-Cogwright Fenn could find any component by feel in the dark. Automaton Tick
-sweeps the floor and occasionally says something surprisingly profound. The
-Workbench is to the west; Cartographer's Den is to the south.
-""",
-    trainer_npc=None,
-    ambient=["Tick sweeps past and makes a small sound that might be a greeting.",
-             "Fenn produces exactly the part he needs without looking."])
-
-link(W["workbench"],    "east",  W["tinkers_den"], "west")
-
-
-# ---------------------------------------------------------------------------
-# SECTION 18 — South Row
-#  Herbalist's Nook is at the west end, accessed from Craftsman's Road West.
-#  Row runs east: Herbalist → Apprentice → Study → Hermit → Cartographer
-#  Cartographer connects north to Tinker's Den.
-#  Alchemist's Corner connects south into Study Hall (forge above, hall below).
-# ---------------------------------------------------------------------------
-caller.msg("\n|c--- Buildings: South Row ---|n")
-
-W["herbalists_nook"] = room(
-    Room, "The Herbalist's Nook",
-    """|gBundles of drying herbs hang from the rafters. Jars crowd every shelf.|n
-
-Hedge-Witch Morvaine is deciding whether you deserve her time. Craftsman's Road
-is to the north; the Apprentice Hall lies to the east.
-""",
-    trainer_npc=None,
-    ambient=["Something in a jar moves. Probably herbs.",
-             "Morvaine makes a sound between a grunt and a diagnosis."])
-
-W["apprentice_hall"] = room(
-    TrainingRoom, "The Apprentice Hall",
-    """|yA large room of practice dummies, training weapons, and battered desks.|n
-
-Apprentice Rudd is already looking at you like he wants to spar. The
-Herbalist's Nook is to the west; the Study Hall lies to the east; the
-Alchemist's Corner is to the north.
-""",
-    trainer_npc=None,
-    ambient=["Rudd squares up to a dummy and misses.",
-             "Apprentice Yeva annotates a textbook, oblivious to the noise.",
-             "Headmaster Orifel pinches the bridge of his nose and says nothing."])
-
-W["study_hall"] = room(
-    TrainingRoom, "The Study Hall",
-    """|wRows of desks and chalkboards. The quieter sibling of the Apprentice Hall.|n
-
-Scholar Bevin supervises with patient calm. Student Mop is asleep at a desk
-and has somehow passed every assessment. The Apprentice Hall is to the west;
-the Hermit's Hollow lies to the east.
-""",
-    ambient=["Student Mop is asleep. His notes are inexplicably excellent.",
-             "Bevin corrects a diagram, pauses, and draws it better."])
-
-W["hermits_hollow"] = room(
-    Room, "The Hermit's Hollow",
-    """|gThis room is inexplicably made to look like a woodland cave.|n
-
-Moss on the walls. A small fire pit. A wooden stool. Nobody knows how this
-ended up inside a town building. Nobody has asked. Sage Aldric Voss already
-knows what you came to ask. The Study Hall is to the west; the Cartographer's
-Den lies to the east.
-""",
-    light_level=2,
-    ambient=["The fire burns without apparent fuel.",
-             "Voss is looking at you. He was looking at you when you arrived."])
-
-W["cartographers_den"] = room(
-    Room, "The Cartographer's Den",
-    """|wEvery surface covered in maps — rolled, pinned, framed, half-finished.|n
-
-Mapper Izra works with a focus that borders on aggressive. She will sell the
-best maps in Dorfin and pay for uncharted territory data. The Hermit's Hollow
-is to the west; Tinker's Den lies to the north.
-""",
-    trainer_npc=None,
-    ambient=["Izra marks a new detail on a map with a tiny, precise stroke."])
-
-link(W["craftsmans_road_west"], "south", W["herbalists_nook"],   "north")
-link(W["herbalists_nook"],      "east",  W["apprentice_hall"],   "west")
-link(W["apprentice_hall"],      "east",  W["study_hall"],        "west")
-link(W["study_hall"],           "east",  W["hermits_hollow"],    "west")
-link(W["hermits_hollow"],       "east",  W["cartographers_den"], "west")
-link(W["alchemists_corner"],    "south", W["study_hall"],        "north")
-link(W["tinkers_den"],          "south", W["cartographers_den"], "north")
-
-
-# ---------------------------------------------------------------------------
-# SECTION 19 — Watchtower & The Precipice
-#  Watchtower is west of Craftsman's Road West.
-# ---------------------------------------------------------------------------
-caller.msg("\n|c--- Buildings: Watchtower & Precipice ---|n")
-
-W["watchtower"] = room(
-    Room, "The Watchtower",
-    """|wA narrow stone tower with a single winding staircase.|n
-
-Watchman Teris notices things at distances that don't seem reasonable. He has
-never explained how. Craftsman's Road is to the east; the Precipice is above.
-""",
-    trainer_npc=None,
-    ambient=["Teris points at something distant. When you look, it's gone."])
-
-W["the_precipice"] = room(
-    LookoutRoom, "The Precipice",
-    """|wA dramatic stone shelf juts out high above the surrounding land.|n
-
-The wind is constant and clean. The full sweep of Dorfin unfolds below —
-distant forests, dark hills, unknown waters. Adventurers come here before
-setting out, and sometimes after, to remember why they left.
-""",
-    desc_night="""|wThe Precipice at night is something else entirely.|n
-
-Awtown glows behind you. Dorfin stretches dark to the horizon, marked only by
-distant fires and cold silver rivers. The wind is the same. You are not.
-""",
-    ambient=["The wind here is constant, cold, and clarifying.",
-             "The view makes problems seem the correct size."])
-
-link(W["craftsmans_road_west"], "west", W["watchtower"],    "east")
-link(W["watchtower"],           "up",   W["the_precipice"], "down")
-
-
-# ---------------------------------------------------------------------------
-# FINAL REPORT
-# ---------------------------------------------------------------------------
-
-caller.msg("\n|y" + "="*60 + "|n")
-caller.msg("|wAwtown world build complete!|n")
-caller.msg("|y" + "="*60 + "|n")
-caller.msg(f"\n|cTotal rooms built:|n {len(W)}")
-caller.msg(f"\n|cNew player start:|n  {W['wayfarers_green'].key} {W['wayfarers_green'].dbref}")
-caller.msg(f"|cDefault home:    |n  {W['heralds_hall'].key} {W['heralds_hall'].dbref}")
-caller.msg("""
-|yAdd to settings.py ConfigMap:|n
-
-  START_LOCATION = "{start}"
-  DEFAULT_HOME   = "{home}"
-
-|yThen:|n
-  1. Restart pod to pick up settings
-  2. @tel {start}  — verify landing in Wayfarers' Green
-  3. Walk the full map, check exits with 'look' in each room
-  4. Build NPCs in world/npcs.py
-
-|gDorfin awaits.|n
-""".format(
-    start=W["wayfarers_green"].dbref,
-    home=W["heralds_hall"].dbref,
-))
+# ── helpers ───────────────────────────────────────────────────────────────────
+
+def _room(db_key):
+    results = evennia.search_tag(db_key, category=ROOM_TAG)
+    return results[0] if results else None
+
+def _make_room(db_key, name, tc_key, desc):
+    tc = TC_MAP.get(tc_key, AwtownRoom)
+    existing = evennia.search_tag(db_key, category=ROOM_TAG)
+    if existing:
+        room = existing[0]
+    else:
+        room = create_object(tc, key=name)
+        room.tags.add(db_key, category=ROOM_TAG)
+    room.name = name
+    room.db.desc = desc
+    return room
+
+def _exit_exists(room, direction):
+    return any(ex.key == direction for ex in room.exits)
+
+def _make_exit(from_key, direction, alias, to_key, tc=None, gate_name=None):
+    tc = tc or DefaultExit
+    fr = _room(from_key)
+    to = _room(to_key)
+    if not fr or not to:
+        return None
+    if _exit_exists(fr, direction):
+        return next((e for e in fr.exits if e.key == direction), None)
+    ex = create_object(tc, key=direction, location=fr, destination=to, aliases=[alias])
+    if gate_name:
+        ex.db.gate_name = gate_name
+    return ex
+
+def _pair_gates(from_key, from_dir, to_key, to_dir):
+    fr = _room(from_key)
+    to = _room(to_key)
+    if not fr or not to:
+        return
+    a = next((e for e in fr.exits if e.key == from_dir), None)
+    b = next((e for e in to.exits if e.key == to_dir), None)
+    if a and b:
+        a.db.pair = b
+        b.db.pair = a
+
+def _make_npc(db_key, name, desc, loc_key, role="generic", dialogue=None):
+    location = _room(loc_key)
+    if not location:
+        return None
+    existing = evennia.search_tag(db_key, category=NPC_TAG)
+    if existing:
+        npc = existing[0]
+        if npc.location != location:
+            npc.move_to(location, quiet=True)
+        return npc
+    npc = create_object(AwtownNPC, key=name, location=location)
+    npc.tags.add(db_key, category=NPC_TAG)
+    npc.db.desc = desc
+    npc.db.npc_role = role
+    if dialogue:
+        npc.db.dialogue = dialogue
+    return npc
+
+
+# =============================================================================
+# ROOM DATA  (db_key, player_name, tc_key, desc)
+# =============================================================================
+
+ROOM_DATA = [
+    # ── FOUNDER'S WALK (12) ──────────────────────────────────────────────────
+    ("fw_1","Along Founder's Walk","road",
+     "The cobblestones of Founder's Walk are swept clean each morning. Warden's Way turns south here. "
+     "The Warden's Barracks stand to the north; the Lamplighter's Nook glows warmly to the west."),
+    ("fw_2","Along Founder's Walk","road",
+     "A well-travelled stretch of Founder's Walk. The Warden's Gate stands solid to the north. "
+     "The walk continues east toward the administrative heart of Awtown."),
+    ("fw_3","Along Founder's Walk","road",
+     "The Notary's Office occupies a neat doorway to the north. "
+     "South, Lantern Road begins its run toward the forge district."),
+    ("fw_4","Along Founder's Walk","road",
+     "A busy stretch — clerks and messengers pass at most hours. "
+     "The Messenger's Roost is just north; the flutter of birds is faintly audible. "
+     "The Archivist's Anteroom is south, perpetually smelling of ink."),
+    ("fw_5","Along Founder's Walk","road",
+     "A quieter stretch. The Shadow Chamber's unmarked door sits to the north, easy to overlook by design."),
+    ("fw_6","Along Founder's Walk","road",
+     "Templegate Lane descends south toward the Temple precinct. "
+     "The Steward's Hall occupies a tidy doorway to the north."),
+    ("fw_7","Along Founder's Walk","road",
+     "The Artificer's Post is to the north, its door usually propped open with a half-finished device. "
+     "Templegate Lane descends south toward the Temple."),
+    ("fw_8","Along Founder's Walk","road",
+     "The Deed Hall anchors the north side, its door bearing the town's official seal. "
+     "The Vault of Gold's squat stone face looks south, barred windows glinting."),
+    ("fw_9","Along Founder's Walk","road",
+     "Malgrave's Parlour occupies the north side, a warm light always visible through its windows. "
+     "The walk is busy at all hours here — the administrative heart of Awtown."),
+    ("fw_10","Along Founder's Walk","road",
+     "Hammerfall's Workshop is to the north, identified by persistent clanking. "
+     "Ondrel's Study sits quietly to the south. The Grand Gate is close."),
+    ("fw_11","Along Founder's Walk","road",
+     "The Grand Gate rises to the north. Above its arch: 'Leave lesser than you arrived.' "
+     "The Herald's Hall lies to the northeast. A covered passage leads south."),
+    ("fw_12","Along Founder's Walk","road",
+     "The far eastern end of Founder's Walk, where the road ends at the Assembly Hall's broad front steps."),
+
+    # ── WARDEN'S WAY (7) ─────────────────────────────────────────────────────
+    ("ww_1","Along Warden's Way","road",
+     "Warden's Way turns south off Founder's Walk here. A quieter road for craftsmen and those who "
+     "know the side streets. The Guardroom door is just to the west."),
+    ("ww_2","Along Warden's Way","road",
+     "A mid-stretch of Warden's Way. The buildings press close; cobblestones are rougher here."),
+    ("ww_3","Along Warden's Way","road",
+     "The Washhouse offers its services to the west. An iron-banded gate to the east opens into "
+     "the Cartographer's Den courtyard."),
+    ("ww_4","Along Warden's Way","road",
+     "Warden's Way bends briefly east here. The Pantry's plain door is to the west."),
+    ("ww_5","Along Warden's Way","road",
+     "A brief eastern jog in the road. The stones are worn smooth by years of wheelbarrow traffic."),
+    ("ww_6","Along Warden's Way","road",
+     "The second Washhouse occupies the western wall. The forge district is very close; "
+     "the smell of hot metal is constant."),
+    ("ww_7","Along Warden's Way","road",
+     "The southern terminus of Warden's Way. The Watchtower's narrow door is to the west. "
+     "A heavy gate to the south leads into the Lantern Court."),
+
+    # ── TEMPLEGATE LANE (2) ──────────────────────────────────────────────────
+    ("tl_1","Templegate Lane","road",
+     "A short lane of well-worn stones connecting Founder's Walk to the Temple precinct below. "
+     "Pilgrims move quietly in either direction at most hours."),
+    ("tl_2","Templegate Lane","road",
+     "The lower end of Templegate Lane. The Shrine of First Light glows softly to the east. "
+     "The Humming Court lies to the south."),
+
+    # ── LANTERN ROAD (6) ─────────────────────────────────────────────────────
+    ("lr_1","The Lantern Road","road",
+     "Small iron lanterns hang at regular intervals, their flames steady even in wind. "
+     "The Quartermaster's Cache is to the west."),
+    ("lr_2","The Lantern Road","road",
+     "The Round Table is to the west; the Assay Office to the east. The lanterns burn a warm amber."),
+    ("lr_3","The Lantern Road","road",
+     "The Cartographer's Den courtyard is to the west; the Mapmaker's Rest just east."),
+    ("lr_4","The Lantern Road","road",
+     "The Posting Board's corkboard walls are visible through the east doorway. "
+     "Lanterns line the road north and south."),
+    ("lr_5","The Lantern Road","road",
+     "The road branches east toward the Hearthstone Inn, and south toward the Iron Forge. "
+     "The smell of food and the ring of metal compete pleasantly."),
+    ("lr_6","The Lantern Road","road",
+     "A short east-west spur. The Inn Counter's door is to the east, the Common Room audible through it."),
+
+    # ── CRAFTSMAN'S ROAD (4) ─────────────────────────────────────────────────
+    ("cr_1","Along Craftsman's Road","road",
+     "The western end of Craftsman's Road. A heavy gate to the west leads into the Lantern Court. "
+     "The Loom Room is just north; the road stretches east."),
+    ("cr_2","Along Craftsman's Road","road",
+     "The Study Hall is tucked to the south. Crates of raw materials line the northern wall."),
+    ("cr_3","Along Craftsman's Road","road",
+     "The Alchemist's Corner is north, occasionally marked by a plume of strange-coloured smoke. "
+     "The Apprentice Hall to the south is the noisiest building on the road."),
+    ("cr_4","Along Craftsman's Road","road",
+     "The eastern end of Craftsman's Road. The Tinker's Den clicking is audible through the north wall. "
+     "The Hermit's Hollow is improbably quiet to the south."),
+
+    # ── GATE / ENTRY ROOMS (3) ───────────────────────────────────────────────
+    ("gate_side","The Warden's Gate","road",
+     "A smaller but sturdy gate in Awtown's western wall. Iron-banded oak stands solid between "
+     "town and the paddock outside. Less ceremony than the Grand Gate — this is where locals pass."),
+    ("gate_main","The Grand Gate","road",
+     "Awtown's grand eastern entrance. Two iron-banded oak doors stand open during daylight, "
+     "flanked by guards in polished town livery. "
+     "Above the arch, carved deep: 'Leave lesser than you arrived.'"),
+    ("gate_back","The South Gate","road",
+     "A quiet gate at Awtown's southern end, rarely busy. The ironwork is entwined with carved vines "
+     "— a tribute to the garden beyond. A young guard reads here more often than she watches the road."),
+
+    # ── TEAL COURTYARDS (4) ──────────────────────────────────────────────────
+    ("teal_ne","The Gilded Passage","courtyard",
+     "A covered passage lit by warm amber lanterns, connecting Founder's Walk to the Outfitter's Rest. "
+     "The walls are clean stone; the air smells faintly of cedar."),
+    ("teal_main","The Cartographer's Den","courtyard",
+     "An open stone courtyard enclosed by the buildings around it. A large covered drafting table "
+     "sits at the centre, its canvas awning weighted against the wind. Rolled maps are pinned under stones."),
+    ("teal_server","The Humming Court","courtyard",
+     "A stone-flagged courtyard centred on a crystal formation that hums just below the threshold of hearing. "
+     "The vibration is felt through the soles of your boots."),
+    ("teal_sw","The Lantern Court","courtyard",
+     "A low courtyard in Awtown's southern quarter, ringed by the town wall on two sides. "
+     "Iron lanterns on poles keep it lit at all hours. A dramatic stone shelf juts out to the southwest."),
+]
+
+
+ROOM_DATA += [
+    # ── DUSTY PADDOCK /4 (4) ─────────────────────────────────────────────────
+    ("stables_nw","The North Stables","exterior",
+     "Long rows of horse stalls line both sides. Breeds from across Dorfin fill the stalls. "
+     "Tack hangs on wall hooks between them."),
+    ("stables_ne","The South Stables","exterior",
+     "The older wing of the paddock, used for working horses and pack animals. "
+     "A water trough runs the length of the south wall."),
+    ("stables_sw","The Tack Room","exterior",
+     "Every wall is hung with saddles, bridles, halters, and riding gear. "
+     "The smell of leather and saddle oil is overwhelming but pleasant."),
+    ("stables_se","The Stable Yard","exterior",
+     "A cobbled yard open to the sky for walking, watering, and trading horses. "
+     "Grooms move with practised efficiency. The clatter of hooves on stone is constant."),
+
+    # ── EASTERN COMMONS /4 (4) ───────────────────────────────────────────────
+    ("commons_nw","The Wayfarers' Green","exterior",
+     "A broad grassy common where travellers rest, camp, and swap stories before entering Awtown. "
+     "The grass is well-worn in patches from generations of campfires."),
+    ("commons_ne","The Cart Market","exterior",
+     "Rotating stalls of travelling merchants spread wares on folding tables and from carts. "
+     "The inventory changes day to day. The smell of spiced food competes with exotic goods."),
+    ("commons_sw","The Crossroads Notice Board","exterior",
+     "A large wooden board covered in notices, wanted posters, and regional news pinned three deep. "
+     "This is where word from the wider world first reaches the road to Awtown."),
+    ("commons_se","The Toll Stone","exterior",
+     "An old carved stone marker at Awtown's eastern border, engraved with the town's founding date "
+     "and a worn relief of the three Founders. The city gate lies to the south."),
+
+    # ── TEMPLE /4 (4) ────────────────────────────────────────────────────────
+    ("temple_nw","The Nave","building",
+     "The main chamber of the Temple of the Eternal Flame. The ceiling is vaulted. "
+     "Rows of worn pews face an altar where the Eternal Flame burns in a brass bowl — "
+     "it has not gone out in recorded memory."),
+    ("temple_ne","The Sanctuary","building",
+     "A quieter, candlelit wing for healing and restoration. The air smells of herbs and clean linen. "
+     "Sister Sera tends to the wounded here with more enthusiasm than precision."),
+    ("temple_sw","The Vestry","building",
+     "A room of robes, ritual objects, and prayer texts in careful order. Brother Aldwin's domain. "
+     "Cleric training is available here."),
+    ("temple_se","The Bell Tower","building",
+     "The base of the Temple's bell tower, where stairs begin climbing upward. "
+     "Paladin-Warden Thane Dusk trains students here amid worn practice equipment."),
+
+    # ── HEARTHSTONE INN /4 (4) ───────────────────────────────────────────────
+    ("tavern_nw","The Common Room","building",
+     "The social heart of Awtown. Every bench is occupied, the hearth blazes, "
+     "and the smell of roasting meat and spilled ale saturates everything pleasantly."),
+    ("tavern_ne","The Kitchen","building",
+     "Cook Darra's domain, run with iron efficiency and complete intolerance for uninvited visitors. "
+     "The smell is extraordinary. The cellar stair is to the south."),
+    ("tavern_sw","The Inn Counter","building",
+     "A worn counter of dark wood, pigeonholes for keys on the wall behind it. "
+     "Innkeeper Bess Copperladle takes lodging payments here with warm efficiency."),
+    ("tavern_se","The Cellar","building",
+     "Stone stairs lead down to a barrel-lined room, cool and dim. Casks of ale and wine are racked "
+     "floor to ceiling. The east passage leads into the Humming Court."),
+
+    # ── GRAND FORGE /4 (4) ───────────────────────────────────────────────────
+    ("forge_nw","The Iron Forge","building",
+     "A thundering forge with massive bellows. The heat is extraordinary. "
+     "Master Smith Brondal Ironmark works here in near-silence with economical precision."),
+    ("forge_ne","The Workbench","building",
+     "A broad, fragrant space — cedar from woodwork, leather from saddle frames. "
+     "Bows, shields, furniture, and tack are produced here. Carpenter Wynn narrates his projects."),
+    ("forge_sw","The Loom Room","building",
+     "The quietest of the Forge's four workshops. Weaver Mira works in near-silence, "
+     "producing cloth of improbable fineness."),
+    ("forge_se","The Alchemist's Corner","building",
+     "Bubbling vials, labeled jars, and the aftermath of small explosions characterise this corner. "
+     "Alchemist Sable Dross works in cheerful chaos."),
+
+    # ── GARDEN OF REMEMBRANCE /4 (4) ─────────────────────────────────────────
+    ("garden_nw","The Memorial Garden","exterior",
+     "Carefully tended flower beds surround small stone monuments to fallen adventurers. "
+     "The groundskeeper's care is evident in every trimmed edge."),
+    ("garden_ne","The Old Graves","exterior",
+     "Weathered headstones from Awtown's earliest days. The inscriptions are cryptic and old. "
+     "At night something moves among these stones — unsettling even within the walls."),
+    ("garden_sw","The Reflecting Pool","exterior",
+     "A still, dark pool surrounded by weeping willows. The water does not stir even in wind. "
+     "Rumoured to show visions. The Watcher stands here always, never speaking."),
+    ("garden_se","The Willow Grove","exterior",
+     "Ancient willows crowd this corner of the garden, their branches forming a curtained space. "
+     "Rare herbs grow in the shadows."),
+]
+
+
+ROOM_DATA += [
+    # ── SINGLE BUILDINGS — North of Founder's Walk (10) ──────────────────────
+    ("warden_barracks","The Warden's Barracks","building",
+     "A long, practical room smelling of leather polish and cold iron. Bunk frames and weapons racks "
+     "line opposite walls. A duty roster and wanted-notice board hang beside the door."),
+    ("notary","The Notary's Office","building",
+     "A cramped but tidy office. Deeds, contracts, witnessed oaths, and official stamps cover every surface. "
+     "The smell of ink and wax seals never fully leaves."),
+    ("messenger_roost","The Messenger's Roost","building",
+     "A small, busy room smelling of feathers and leather satchels. Messenger birds perch on racks. "
+     "Runners come and go constantly."),
+    ("shadow_chamber","The Shadow Chamber","building",
+     "A plain room with a round table and six chairs, no windows, no decoration. Used by town guard "
+     "leadership and, unofficially, by the local Thieves' Guild liaison."),
+    ("stewards_hall","The Steward's Hall","building",
+     "A tidy administrative office where the town's logistics are managed. Bulletin boards, ledgers, "
+     "and supply manifests cover every surface."),
+    ("artificer_post","The Artificer's Post","building",
+     "A bright, cluttered workshop where broken things are fixed. Magical items, mundane tools, "
+     "and odd contraptions in various states of repair line the walls."),
+    ("deed_hall","The Deed Hall","building",
+     "A narrow room lined with filing cabinets and land registry scrolls. Every plot of land in Awtown "
+     "has a record here. Dry as dust, but surprisingly important."),
+    ("malgraves_parlour","Malgrave's Parlour","building",
+     "A warm, welcoming office that always feels slightly busy. Comfortable chairs face a desk covered "
+     "in notes and schedules. A 'You've Got This!' pennant hangs slightly crooked above the door."),
+    ("hammerfall_workshop","Hammerfall's Workshop","building",
+     "Absolute chaos. Every surface is covered in half-built devices, tools, spare parts, and diagrams. "
+     "The smell of oil and hot metal is intense. Marro Hammerfall is always elbow-deep in something."),
+    ("heralds_hall","The Herald's Hall","building",
+     "The first room most adventurers see inside Awtown. High ceilings, bright torchlight, a roaring hearth. "
+     "A large Quest Board dominates one wall; town maps are available here."),
+
+    # ── WEST DEAD-ENDS (2) ────────────────────────────────────────────────────
+    ("lamplighters_nook","The Lamplighter's Nook","building",
+     "A small alcove built into the town wall, smelling of hot wax and lamp oil. "
+     "Racks of candles and lanterns line every surface. Always lit, even on the darkest nights."),
+    ("guardroom","The Guardroom","building",
+     "A plain utilitarian room smelling of leather and cold stew. Off-duty guards play cards at a "
+     "battered table. A pinboard bristles with wanted notices."),
+
+    # ── EAST END (1) ─────────────────────────────────────────────────────────
+    ("assembly_hall","The Assembly Hall","building",
+     "A grand vaulted chamber for town meetings and formal ceremonies. Rows of benches face a raised dais. "
+     "Portraits of the three Founders hang on the walls."),
+
+    # ── INTERIOR DEAD-ENDS (6) ────────────────────────────────────────────────
+    ("archivists_anteroom","The Archivist's Anteroom","building",
+     "Shelves stacked with overflowing ledgers and correspondence waiting to be filed. "
+     "The room perpetually smells of ink and mild panic."),
+    ("assay_office","The Assay Office","building",
+     "A clean, well-lit room with precision scales, magnifying lenses, and testing reagents. "
+     "Assayer Dunt conducts all valuations with complete impartiality."),
+    ("mapmakers_rest","The Mapmaker's Rest","building",
+     "A narrow room with chairs and a tall map case. Travelling cartographers copy charts here. "
+     "A rumour board near the door catches things the official boards won't print."),
+    ("posting_board","The Posting Board","building",
+     "A room dominated by an enormous cork board covered in notices and wanted postings. "
+     "The work here is rougher than what the Herald's Hall will touch."),
+    ("shrine_of_first_light","The Shrine of First Light","building",
+     "A candlelit devotional alcove off Templegate Lane. A carved stone basin holds offerings. "
+     "Acolyte Ren keeps the candles burning with teenage earnestness."),
+    ("sentinel_post","The Sentinel's Post","building",
+     "A narrow guard station cut into the inner face of the south wall. Arrow slits look out over "
+     "the Lantern Court. Cold even in summer. Watchman Orel has stood this post for eleven years."),
+
+    # ── WARDEN'S WAY WEST (4) ─────────────────────────────────────────────────
+    ("washhouse","The Washhouse","building",
+     "A surprisingly pleasant public washhouse with warm water always available. "
+     "Clean towels smell faintly of lavender. Certain trail debuffs clear faster here."),
+    ("pantry","The Pantry","building",
+     "A small, cool room with stone walls and a heavy door. Shelves of preserved foods, dried goods, "
+     "candles, and basic travel rations. Nan keeps it tidy without eye contact."),
+    ("washhouse_lower","The Washhouse (Lower)","building",
+     "A second public washhouse serving the southern end of Warden's Way, "
+     "identical in appointments with slightly better water pressure."),
+    ("watchtower","The Watchtower","building",
+     "A narrow stone tower. Arrow slits look out over the southern approaches. "
+     "Watchman Teris maintains a sharp eye here and turns distant sightings into quests."),
+
+    # ── SOUTH OF FOUNDER'S WALK (3) ───────────────────────────────────────────
+    ("vault_of_gold","The Vault of Gold","building",
+     "A squat stone building with a heavy iron door. Polished wood counters, barred windows, "
+     "and the air of serious finance. Banker Guildred Copperpot handles everything with gnomish precision."),
+    ("oldmere_study","Ondrel's Study","building",
+     "Floor-to-ceiling shelves of books, maps, scrolls, and documents in a system only Joleth understands. "
+     "A meticulous desk sits at the centre, always bearing an open book."),
+    ("outfitters_rest","The Outfitter's Rest","building",
+     "A cozy shop with overstuffed chairs by the window. New adventurers can claim a basic starter kit here. "
+     "Shopkeep Marta worries about everyone going out underprepared."),
+
+    # ── AROUND TEAL COURTYARDS (4) ────────────────────────────────────────────
+    ("supply_room","The Supply Room","building",
+     "A general overflow storage room, less organised than the Quartermaster's Cache. "
+     "Things end up here when there is nowhere better. Stock Boy Fen is doing his best."),
+    ("crystal_repository","The Crystal Repository","building",
+     "A space dominated by a humming crystal formation of unknown origin — an arcane storage device. "
+     "Archivist Quellan tends it quietly and talks to it when alone."),
+    ("round_table","The Round Table","building",
+     "A small meeting room with — pointedly — a round table and chairs. "
+     "Guild Registrar Brom will mention the table's roundness at least twice per visit."),
+    ("quartermaster","The Quartermaster's Cache","building",
+     "A tidy storeroom where everything is labeled and inventoried. "
+     "Quartermaster Hobb runs it entirely by the numbers. Nothing leaves without a signed manifest."),
+
+    # ── SOUTH WALL AREA (3) ───────────────────────────────────────────────────
+    ("precipice","The Precipice","exterior",
+     "A dramatic stone shelf jutting from Awtown's southern wall, high above the surrounding land. "
+     "The wind is constant and strong. On a clear day the full sweep of Dorfin unfolds below."),
+    ("southern_outlook","The Southern Outlook","exterior",
+     "A windswept overlook on the south wall of Awtown, east of the Lantern Court. "
+     "The view south is unobstructed."),
+    ("lookout_point","The Lookout Point","exterior",
+     "A ground-level vantage point built into Awtown's western wall, overlooking the approach "
+     "to the Warden's Gate."),
+
+    # ── SOUTH ROW (4) ─────────────────────────────────────────────────────────
+    ("herbalists_nook","The Herbalist's Nook","building",
+     "A cramped, fragrant room near the garden gate. Bundles of drying herbs hang from the rafters; "
+     "jars of roots, seeds, bark, and petals crowd every shelf. Mud is always tracked in."),
+    ("study_hall","The Study Hall","building",
+     "The quieter sibling of the Apprentice Hall. Rows of desks, reference books, and chalkboards. "
+     "Scholar Bevin supervises. Student Mop is asleep at a back desk."),
+    ("apprentice_hall","The Apprentice Hall","building",
+     "A large open room with practice dummies and training weapons. Slightly chaotic, enthusiastically loud. "
+     "Headmaster Orifel manages it with experienced weariness."),
+    ("hermit_hollow","The Hermit's Hollow","building",
+     "This room resembles a woodland cave: moss on the walls, a fire pit, a wooden stool. "
+     "Nobody knows how it got here. Sage Aldric Voss seems entirely comfortable with that."),
+
+    # ── TINKER'S DEN (1) ─────────────────────────────────────────────────────
+    ("tinker_den","The Tinker's Den","building",
+     "A cluttered den of gears, springs, lenses, and gadgets. The smell of oil is overwhelming. "
+     "Automaton Tick sweeps the floor and occasionally says something surprisingly profound."),
+
+    # ── VERTICALS (3) ─────────────────────────────────────────────────────────
+    ("bell_upper","The Bell Tower -- Upper","building",
+     "A landing halfway up the Temple's bell tower. Arrow slits overlook Awtown's rooftops. "
+     "A weapon rack holds consecrated arms."),
+    ("belfry","The Belfry","building",
+     "The summit of the Temple's bell tower. The great bronze bell hangs from ancient timbers. "
+     "It tolls at dawn and dusk; when it rings, you feel it in your chest."),
+    ("high_watch","The High Watch","exterior",
+     "A narrow platform above the Precipice, reached by iron rungs. No shelter from the wind. "
+     "The highest accessible point in Awtown, with unobstructed views in all directions."),
+]
+
+
+# =============================================================================
+# EXIT DATA  (from_key, direction, alias, to_key, type, gate_name)
+# type: "std" | "gate" | "city_gate"
+# =============================================================================
+
+EXIT_DATA = [
+    # ── FOUNDER'S WALK internal ───────────────────────────────────────────────
+    ("fw_1","east","e","fw_2","std",None),
+    ("fw_2","west","w","fw_1","std",None),
+    ("fw_2","east","e","fw_3","std",None),
+    ("fw_3","west","w","fw_2","std",None),
+    ("fw_3","east","e","fw_4","std",None),
+    ("fw_4","west","w","fw_3","std",None),
+    ("fw_4","east","e","fw_5","std",None),
+    ("fw_5","west","w","fw_4","std",None),
+    ("fw_5","east","e","fw_6","std",None),
+    ("fw_6","west","w","fw_5","std",None),
+    ("fw_6","east","e","fw_7","std",None),
+    ("fw_7","west","w","fw_6","std",None),
+    ("fw_7","east","e","fw_8","std",None),
+    ("fw_8","west","w","fw_7","std",None),
+    ("fw_8","east","e","fw_9","std",None),
+    ("fw_9","west","w","fw_8","std",None),
+    ("fw_9","east","e","fw_10","std",None),
+    ("fw_10","west","w","fw_9","std",None),
+    ("fw_10","east","e","fw_11","std",None),
+    ("fw_11","west","w","fw_10","std",None),
+    ("fw_11","east","e","fw_12","std",None),
+    ("fw_12","west","w","fw_11","std",None),
+
+    # ── FW to buildings/roads ─────────────────────────────────────────────────
+    ("fw_1","north","n","warden_barracks","std",None),
+    ("warden_barracks","south","s","fw_1","std",None),
+    ("fw_1","south","s","ww_1","std",None),
+    ("fw_1","west","w","lamplighters_nook","std",None),
+    ("lamplighters_nook","east","e","fw_1","std",None),
+    ("fw_2","north","n","gate_side","std",None),
+    ("gate_side","south","s","fw_2","std",None),
+    ("fw_3","north","n","notary","std",None),
+    ("notary","south","s","fw_3","std",None),
+    ("fw_3","south","s","lr_1","std",None),
+    ("fw_4","north","n","messenger_roost","std",None),
+    ("messenger_roost","south","s","fw_4","std",None),
+    ("fw_4","south","s","archivists_anteroom","std",None),
+    ("archivists_anteroom","north","n","fw_4","std",None),
+    ("fw_5","north","n","shadow_chamber","std",None),
+    ("shadow_chamber","south","s","fw_5","std",None),
+    ("fw_6","north","n","stewards_hall","std",None),
+    ("stewards_hall","south","s","fw_6","std",None),
+    ("fw_6","south","s","temple_ne","std",None),
+    ("temple_ne","north","n","fw_6","std",None),
+    ("fw_7","north","n","artificer_post","std",None),
+    ("artificer_post","south","s","fw_7","std",None),
+    ("fw_7","south","s","tl_1","std",None),
+    ("fw_8","north","n","deed_hall","std",None),
+    ("deed_hall","south","s","fw_8","std",None),
+    ("fw_8","south","s","vault_of_gold","std",None),
+    ("vault_of_gold","north","n","fw_8","std",None),
+    ("fw_9","north","n","malgraves_parlour","std",None),
+    ("malgraves_parlour","south","s","fw_9","std",None),
+    ("fw_10","north","n","hammerfall_workshop","std",None),
+    ("hammerfall_workshop","south","s","fw_10","std",None),
+    ("fw_10","south","s","oldmere_study","std",None),
+    ("oldmere_study","north","n","fw_10","std",None),
+    ("fw_11","north","n","gate_main","std",None),
+    ("gate_main","south","s","fw_11","std",None),
+    ("fw_11","northeast","ne","heralds_hall","std",None),
+    ("heralds_hall","southwest","sw","fw_11","std",None),
+    ("fw_11","south","s","teal_ne","std",None),
+    ("teal_ne","north","n","fw_11","std",None),
+    ("teal_ne","south","s","outfitters_rest","std",None),
+    ("outfitters_rest","north","n","teal_ne","std",None),
+    ("fw_12","east","e","assembly_hall","std",None),
+    ("assembly_hall","west","w","fw_12","std",None),
+
+    # ── WARDEN'S WAY ──────────────────────────────────────────────────────────
+    ("ww_1","north","n","fw_1","std",None),
+    ("ww_1","south","s","ww_2","std",None),
+    ("ww_2","north","n","ww_1","std",None),
+    ("ww_2","south","s","ww_3","std",None),
+    ("ww_3","north","n","ww_2","std",None),
+    ("ww_3","south","s","ww_4","std",None),
+    ("ww_4","north","n","ww_3","std",None),
+    ("ww_4","east","e","ww_5","std",None),
+    ("ww_5","west","w","ww_4","std",None),
+    ("ww_5","south","s","ww_6","std",None),
+    ("ww_6","north","n","ww_5","std",None),
+    ("ww_6","south","s","ww_7","std",None),
+    ("ww_7","north","n","ww_6","std",None),
+    ("ww_1","west","w","guardroom","std",None),
+    ("guardroom","east","e","ww_1","std",None),
+    ("ww_3","west","w","washhouse","std",None),
+    ("washhouse","east","e","ww_3","std",None),
+    ("ww_4","west","w","pantry","std",None),
+    ("pantry","east","e","ww_4","std",None),
+    ("ww_6","west","w","washhouse_lower","std",None),
+    ("washhouse_lower","east","e","ww_6","std",None),
+    ("ww_7","west","w","watchtower","std",None),
+    ("watchtower","east","e","ww_7","std",None),
+
+    # ── GATE: WW-3 <-> Cartographer's Den (orange, auto-close) ───────────────
+    ("ww_3","east","e","teal_main","gate","gate"),
+    ("teal_main","west","w","ww_3","gate","gate"),
+    # Supply Room off teal_main
+    ("teal_main","south","s","supply_room","std",None),
+    ("supply_room","north","n","teal_main","std",None),
+    # Cartographer's Den also connects east to LR-3
+    ("teal_main","east","e","lr_3","std",None),
+    ("lr_3","west","w","teal_main","std",None),
+
+    # ── GATE: WW-7 <-> Lantern Court (orange, auto-close) ────────────────────
+    ("ww_7","south","s","teal_sw","gate","gate"),
+    ("teal_sw","north","n","ww_7","gate","gate"),
+
+    # ── LANTERN COURT exits ───────────────────────────────────────────────────
+    ("teal_sw","west","w","sentinel_post","std",None),
+    ("sentinel_post","east","e","teal_sw","std",None),
+    ("teal_sw","southwest","sw","precipice","std",None),
+    ("precipice","northeast","ne","teal_sw","std",None),
+    # GATE: Lantern Court <-> CR-1
+    ("teal_sw","east","e","cr_1","gate","gate"),
+    ("cr_1","west","w","teal_sw","gate","gate"),
+    # GATE: Lantern Court <-> South Gate
+    ("teal_sw","south","s","gate_back","gate","gate"),
+    ("gate_back","north","n","teal_sw","gate","gate"),
+
+    # ── SOUTH GATE <-> Memorial Garden (orange, auto-close) ──────────────────
+    ("gate_back","south","s","garden_nw","gate","gate"),
+    ("garden_nw","north","n","gate_back","gate","gate"),
+
+    # ── CITY GATE: Grand Gate <-> Toll Stone ─────────────────────────────────
+    ("gate_main","north","n","commons_se","city_gate","city gate"),
+    ("commons_se","south","s","gate_main","city_gate","city gate"),
+
+    # ── CITY GATE: Warden's Gate <-> Tack Room ───────────────────────────────
+    ("gate_side","north","n","stables_sw","city_gate","city gate"),
+    ("stables_sw","south","s","gate_side","city_gate","city gate"),
+
+    # ── TEMPLEGATE LANE ───────────────────────────────────────────────────────
+    ("tl_1","north","n","fw_7","std",None),
+    ("tl_1","south","s","tl_2","std",None),
+    ("tl_2","north","n","tl_1","std",None),
+    ("tl_2","south","s","teal_server","std",None),
+    ("teal_server","north","n","tl_2","std",None),
+    ("tl_2","east","e","shrine_of_first_light","std",None),
+    ("shrine_of_first_light","west","w","tl_2","std",None),
+
+    # ── HUMMING COURT exits ───────────────────────────────────────────────────
+    ("teal_server","west","w","tavern_se","std",None),
+    ("tavern_se","east","e","teal_server","std",None),
+    ("teal_server","east","e","crystal_repository","std",None),
+    ("crystal_repository","west","w","teal_server","std",None),
+    ("crystal_repository","south","s","tinker_den","std",None),
+    ("tinker_den","north","n","crystal_repository","std",None),
+
+    # ── LANTERN ROAD ──────────────────────────────────────────────────────────
+    ("lr_1","north","n","fw_3","std",None),
+    ("lr_1","south","s","lr_2","std",None),
+    ("lr_2","north","n","lr_1","std",None),
+    ("lr_2","south","s","lr_3","std",None),
+    ("lr_3","north","n","lr_2","std",None),
+    ("lr_3","south","s","lr_4","std",None),
+    ("lr_4","north","n","lr_3","std",None),
+    ("lr_4","south","s","lr_5","std",None),
+    ("lr_5","north","n","lr_4","std",None),
+    ("lr_5","east","e","lr_6","std",None),
+    ("lr_6","west","w","lr_5","std",None),
+    ("lr_1","west","w","quartermaster","std",None),
+    ("quartermaster","east","e","lr_1","std",None),
+    ("lr_2","west","w","round_table","std",None),
+    ("round_table","east","e","lr_2","std",None),
+    ("lr_2","east","e","assay_office","std",None),
+    ("assay_office","west","w","lr_2","std",None),
+    ("lr_4","east","e","posting_board","std",None),
+    ("posting_board","west","w","lr_4","std",None),
+    ("lr_5","south","s","forge_nw","std",None),
+    ("forge_nw","north","n","lr_5","std",None),
+    ("lr_6","east","e","tavern_sw","std",None),
+    ("tavern_sw","west","w","lr_6","std",None),
+
+    # ── CRAFTSMAN'S ROAD ──────────────────────────────────────────────────────
+    ("cr_1","east","e","cr_2","std",None),
+    ("cr_2","west","w","cr_1","std",None),
+    ("cr_2","east","e","cr_3","std",None),
+    ("cr_3","west","w","cr_2","std",None),
+    ("cr_3","east","e","cr_4","std",None),
+    ("cr_4","west","w","cr_3","std",None),
+    ("cr_1","north","n","forge_sw","std",None),
+    ("forge_sw","south","s","cr_1","std",None),
+    ("cr_2","south","s","study_hall","std",None),
+    ("study_hall","north","n","cr_2","std",None),
+    ("cr_3","north","n","forge_se","std",None),
+    ("forge_se","south","s","cr_3","std",None),
+    ("cr_3","south","s","apprentice_hall","std",None),
+    ("apprentice_hall","north","n","cr_3","std",None),
+    ("cr_4","north","n","tinker_den","std",None),
+    ("tinker_den","south","s","cr_4","std",None),
+    ("cr_4","south","s","hermit_hollow","std",None),
+    ("hermit_hollow","north","n","cr_4","std",None),
+
+    # ── GRAND FORGE internal ──────────────────────────────────────────────────
+    ("forge_nw","east","e","forge_ne","std",None),
+    ("forge_ne","west","w","forge_nw","std",None),
+    ("forge_nw","south","s","forge_sw","std",None),
+    ("forge_sw","north","n","forge_nw","std",None),
+    ("forge_ne","south","s","forge_se","std",None),
+    ("forge_se","north","n","forge_ne","std",None),
+    ("forge_sw","east","e","forge_se","std",None),
+    ("forge_se","west","w","forge_sw","std",None),
+
+    # ── HERBALIST'S NOOK ──────────────────────────────────────────────────────
+    ("cr_1","south","s","herbalists_nook","std",None),
+    ("herbalists_nook","north","n","cr_1","std",None),
+
+    # ── TEMPLE internal ───────────────────────────────────────────────────────
+    ("temple_nw","east","e","temple_ne","std",None),
+    ("temple_ne","west","w","temple_nw","std",None),
+    ("temple_nw","south","s","temple_sw","std",None),
+    ("temple_sw","north","n","temple_nw","std",None),
+    ("temple_ne","south","s","temple_se","std",None),
+    ("temple_se","north","n","temple_ne","std",None),
+    ("temple_sw","east","e","temple_se","std",None),
+    ("temple_se","west","w","temple_sw","std",None),
+    # Temple to Tavern
+    ("temple_sw","south","s","tavern_nw","std",None),
+    ("tavern_nw","north","n","temple_sw","std",None),
+    # Bell tower verticals
+    ("temple_se","up","u","bell_upper","std",None),
+    ("bell_upper","down","d","temple_se","std",None),
+    ("bell_upper","up","u","belfry","std",None),
+    ("belfry","down","d","bell_upper","std",None),
+
+    # ── HEARTHSTONE INN internal ──────────────────────────────────────────────
+    ("tavern_nw","east","e","tavern_ne","std",None),
+    ("tavern_ne","west","w","tavern_nw","std",None),
+    ("tavern_nw","south","s","tavern_sw","std",None),
+    ("tavern_sw","north","n","tavern_nw","std",None),
+    ("tavern_ne","south","s","tavern_se","std",None),
+    ("tavern_se","north","n","tavern_ne","std",None),
+    ("tavern_sw","east","e","tavern_se","std",None),
+    ("tavern_se","west","w","tavern_sw","std",None),
+
+    # ── EASTERN COMMONS internal ──────────────────────────────────────────────
+    ("commons_nw","east","e","commons_ne","std",None),
+    ("commons_ne","west","w","commons_nw","std",None),
+    ("commons_nw","south","s","commons_sw","std",None),
+    ("commons_sw","north","n","commons_nw","std",None),
+    ("commons_ne","south","s","commons_se","std",None),
+    ("commons_se","north","n","commons_ne","std",None),
+    ("commons_sw","east","e","commons_se","std",None),
+    ("commons_se","west","w","commons_sw","std",None),
+
+    # ── DUSTY PADDOCK internal ────────────────────────────────────────────────
+    ("stables_nw","east","e","stables_ne","std",None),
+    ("stables_ne","west","w","stables_nw","std",None),
+    ("stables_nw","south","s","stables_sw","std",None),
+    ("stables_sw","north","n","stables_nw","std",None),
+    ("stables_ne","south","s","stables_se","std",None),
+    ("stables_se","north","n","stables_ne","std",None),
+    ("stables_sw","east","e","stables_se","std",None),
+    ("stables_se","west","w","stables_sw","std",None),
+
+    # ── GARDEN OF REMEMBRANCE internal ───────────────────────────────────────
+    ("garden_nw","east","e","garden_ne","std",None),
+    ("garden_ne","west","w","garden_nw","std",None),
+    ("garden_nw","south","s","garden_sw","std",None),
+    ("garden_sw","north","n","garden_nw","std",None),
+    ("garden_ne","south","s","garden_se","std",None),
+    ("garden_se","north","n","garden_ne","std",None),
+    ("garden_sw","east","e","garden_se","std",None),
+    ("garden_se","west","w","garden_sw","std",None),
+
+    # ── HIGH WATCH vertical ───────────────────────────────────────────────────
+    ("precipice","up","u","high_watch","std",None),
+    ("high_watch","down","d","precipice","std",None),
+
+    # ── SOUTHERN OUTLOOK / LOOKOUT POINT (orphan connections) ────────────────
+    ("teal_sw","east","e","southern_outlook","std",None),  # best-fit from table
+    ("southern_outlook","west","w","teal_sw","std",None),
+    ("lookout_point","east","e","ww_7","std",None),
+    ("ww_7","west","w","lookout_point","std",None),
+]
+
+
+# =============================================================================
+# NPC DATA  (db_key, name, desc, loc_key, role)
+# =============================================================================
+
+NPC_DATA = [
+    ("npc_vonn","Gate Captain Vonn",
+     "A gruff, fair-faced veteran in polished town livery. He has seen everything that comes through this gate.",
+     "gate_main","guard"),
+    ("npc_tessa","Guard Tessa",
+     "A younger gate guard with an easy smile and curious eyes. She notices more than she lets on.",
+     "gate_main","guard"),
+    ("npc_crabb","Warden Crabb",
+     "An old, suspicious warden with a permanent squint and a long memory for faces.",
+     "gate_side","guard"),
+    ("npc_birch","Gate Hand Birch",
+     "A young guard who spends more time reading than watching the gate.",
+     "gate_back","guard"),
+    ("npc_bramwick","Herald Bramwick",
+     "An endlessly enthusiastic man in official town colours. He knows every adventurer by name.",
+     "heralds_hall","quest_giver"),
+    ("npc_dilly","Scribe Dilly",
+     "Bramwick's efficient assistant, quietly managing paperwork and map sales.",
+     "heralds_hall","merchant"),
+    ("npc_marta","Shopkeep Marta",
+     "A warm, grandmotherly woman who worries about every adventurer leaving underprepared.",
+     "outfitters_rest","merchant"),
+    ("npc_guildred","Banker Guildred Copperpot",
+     "A gnome banker of absolute precision and immovable principles. He speaks in decimal points.",
+     "vault_of_gold","banker"),
+    ("npc_holt","Vault Guard Holt",
+     "An enormous human in chainmail who communicates primarily through presence.",
+     "vault_of_gold","guard"),
+    ("npc_malgrave","Jorvyn Malgrave",
+     "Energetic, personable, always slightly in motion. Jorvyn knows everyone by name.",
+     "malgraves_parlour","founder"),
+    ("npc_hammerfall","Marro Hammerfall",
+     "A gruff, warm man who communicates mostly in grunts while working.",
+     "hammerfall_workshop","founder"),
+    ("npc_ondrel","Joleth Ondrel",
+     "Quietly brilliant and slightly distracted. Warm underneath the absentmindedness.",
+     "oldmere_study","founder"),
+    ("npc_pell","Steward Pell",
+     "An efficient, no-nonsense woman who manages the town's logistics without wasting a minute.",
+     "stewards_hall","quest_giver"),
+    ("npc_nimble","Clerk Nimble",
+     "A young halfling assistant, quick with a quill and quicker with a filing system.",
+     "stewards_hall","generic"),
+    ("npc_cogsworth","Tinker Cogsworth",
+     "An old gnome friend of Marro who talks very fast and knows an extraordinary amount.",
+     "artificer_post","merchant"),
+    ("npc_sprocket","Apprentice Sprocket",
+     "A young gnome learning the trade. She fixes approximately half of what she touches.",
+     "artificer_post","generic"),
+    ("npc_renwick","Tollkeeper Renwick",
+     "A bored but friendly gate officer who has given the same orientation speech for fifteen years.",
+     "commons_se","generic"),
+    ("npc_trader_moss","Trader Moss",
+     "A travelling merchant with a rotating inventory of questionable provenance.",
+     "commons_ne","merchant"),
+    ("npc_oswin","Stableman Oswin",
+     "A weathered old horseman who can assess a horse's temperament in thirty seconds.",
+     "stables_sw","merchant"),
+    ("npc_groom_pip","Groom Pip",
+     "A cheerful young stable hand who is always in a hurry and always has a carrot ready.",
+     "stables_se","generic"),
+    ("npc_enid","Groundskeeper Enid",
+     "An elderly woman who tends the Memorial Garden with quiet devotion. She knows every grave.",
+     "garden_nw","quest_giver"),
+    ("npc_watcher","The Watcher",
+     "A silent, hooded figure who stands by the Reflecting Pool at all hours. No one knows who they are.",
+     "garden_sw","generic"),
+    ("npc_edwyn_lux","High Priest Edwyn Lux",
+     "A solemn, kind man who oversees all temple functions with gentle authority.",
+     "temple_nw","merchant"),
+    ("npc_sister_sera","Sister Sera",
+     "An enthusiastic young priestess still mastering some of her healing spells.",
+     "temple_ne","merchant"),
+    ("npc_aldwin","Brother Aldwin",
+     "A formal, serious cleric trainer who expects dedication.",
+     "temple_sw","trainer"),
+    ("npc_thane_dusk","Paladin-Warden Thane Dusk",
+     "A battle-scarred retired paladin who trains others. Gruff, absolutely honourable.",
+     "temple_se","trainer"),
+    ("npc_bess","Innkeeper Bess Copperladle",
+     "Warm, formidable, with a memory for faces that borders on unsettling.",
+     "tavern_sw","innkeeper"),
+    ("npc_finn","Barkeep Finn",
+     "Quick wit and quicker hands. Serves drinks without spilling and information without effort.",
+     "tavern_nw","merchant"),
+    ("npc_cobble","Lute-player Cobble",
+     "A wandering bard of considerable skill and terrible grace under requests.",
+     "tavern_nw","generic"),
+    ("npc_darra","Cook Darra",
+     "The undisputed ruler of the kitchen. She does not welcome visitors.",
+     "tavern_ne","generic"),
+    ("npc_quellan","Archivist Quellan",
+     "A quiet half-elf who tends the crystal formation and talks to it when alone.",
+     "crystal_repository","quest_giver"),
+    ("npc_hobb","Quartermaster Hobb",
+     "Short, efficient, entirely governed by inventory numbers. Nothing leaves without a manifest.",
+     "quartermaster","merchant"),
+    ("npc_brom","Guild Registrar Brom",
+     "Handles guild formation with meticulous attention. Very fond of the round table.",
+     "round_table","generic"),
+    ("npc_brondal","Master Smith Brondal Ironmark",
+     "A veteran dwarf smith of legendary skill and very few words.",
+     "forge_nw","trainer"),
+    ("npc_wynn","Carpenter Wynn",
+     "A cheerful human craftsman who narrates his work at length to anyone within earshot.",
+     "forge_ne","trainer"),
+    ("npc_mira","Weaver Mira",
+     "A quiet, precise elf who produces fabric of impossible fineness.",
+     "forge_sw","trainer"),
+    ("npc_sable_dross","Alchemist Sable Dross",
+     "Eccentric, distracted, faintly singed. Works in cheerful chaos.",
+     "forge_se","trainer"),
+    ("npc_fenn","Cogwright Fenn",
+     "Marro's oldest friend. Sells mechanical components and trains tinkerers hands-on.",
+     "tinker_den","trainer"),
+    ("npc_tick","Automaton Tick",
+     "A small mechanical construct that sweeps the floor and occasionally says something profound.",
+     "tinker_den","generic"),
+    ("npc_orifel","Headmaster Thane Orifel",
+     "A tired but dedicated trainer who has seen a hundred students come and go.",
+     "apprentice_hall","trainer"),
+    ("npc_rudd","Apprentice Rudd",
+     "An overconfident student who challenges new arrivals to sparring matches.",
+     "apprentice_hall","generic"),
+    ("npc_yeva","Apprentice Yeva",
+     "A studious young mage who takes her homework very seriously.",
+     "apprentice_hall","quest_giver"),
+    ("npc_aldric_voss","Sage Aldric Voss",
+     "Ancient, cryptic, inexplicably comfortable in a room that looks like a forest cave.",
+     "hermit_hollow","quest_giver"),
+    ("npc_fen","Stock Boy Fen",
+     "A teenage helper who is not very organised but is enthusiastic.",
+     "supply_room","quest_giver"),
+    ("npc_teris","Watchman Teris",
+     "A sharp-eyed half-elf ranger who notices what moves on the horizon.",
+     "watchtower","quest_giver"),
+    ("npc_dorn","Sergeant Dorn",
+     "A scarred veteran with a permanent scowl and a dry sense of humour.",
+     "warden_barracks","trainer"),
+    ("npc_recruit_pip","Guard Recruit Pip",
+     "First week on the job, nervously polishing a helmet that is too large for him.",
+     "warden_barracks","generic"),
+    ("npc_morvaine","Hedge-Witch Morvaine",
+     "An ancient, half-feral woman who knows every plant in Dorfin by name.",
+     "herbalists_nook","trainer"),
+    ("npc_izra","Mapper Izra",
+     "A meticulous gnome cartographer who has personally charted more of Dorfin than anyone alive.",
+     "teal_main","trainer"),
+    ("npc_nan","Nan",
+     "A quiet, stout woman who keeps the Pantry stocked without ever making eye contact.",
+     "pantry","merchant"),
+    ("npc_orvyn","Lamplighter Orvyn",
+     "An elderly man who has walked Awtown's streets every night for forty years.",
+     "lamplighters_nook","quest_giver"),
+    ("npc_harwick","Sergeant's Aid Harwick",
+     "Stocky, no-nonsense. Handles the paperwork Sergeant Dorn will not touch.",
+     "guardroom","quest_giver"),
+    ("npc_sybil","Clerk-Errant Sybil",
+     "Young, harried, permanently ink-stained. She was a courier once. She never left.",
+     "archivists_anteroom","quest_giver"),
+    ("npc_tetch","Wayfarer Tetch",
+     "A lean, road-worn human who has been 'passing through' for three years.",
+     "mapmakers_rest","merchant"),
+    ("npc_acolyte_ren","Acolyte Ren",
+     "An earnest seventeen-year-old managing the Shrine with more enthusiasm than authority.",
+     "shrine_of_first_light","merchant"),
+    ("npc_orel","Watchman Orel",
+     "A watchman who has stood the same post for eleven years without complaint.",
+     "sentinel_post","quest_giver"),
+    ("npc_notary_prim","Notary Prim",
+     "Small, precise, permanently ink-stained. Notarises contracts without judging them.",
+     "notary","generic"),
+    ("npc_wren","Postmaster Wren",
+     "Wiry, fast-moving, never stands still. Manages the town's messenger network.",
+     "messenger_roost","quest_giver"),
+    ("npc_registrar","Registrar Voss",
+     "A methodical older man who knows where every land scroll is filed.",
+     "deed_hall","generic"),
+    ("npc_sal","Board-Keeper Sal",
+     "A gruff woman who manages the Posting Board with absolute neutrality.",
+     "posting_board","quest_giver"),
+    ("npc_dunt","Assayer Dunt",
+     "A square-built, square-jawed dwarf who conducts all valuations incorruptibly.",
+     "assay_office","merchant"),
+    ("npc_bevin","Scholar Bevin",
+     "A calm, patient young woman who ended up as the Study Hall's unofficial supervisor.",
+     "study_hall","trainer"),
+    ("npc_student_mop","Student Mop",
+     "Always asleep at a desk. Has never failed a lesson. Nobody knows how.",
+     "study_hall","generic"),
+    ("npc_aldous","Town Crier Aldous",
+     "A dramatic man who announces town news with maximum gravitas.",
+     "assembly_hall","generic"),
+]
+
+
+# =============================================================================
+# GATE PAIRS  (from_key, from_dir, to_key, to_dir)
+# Must be run after all exits are created.
+# =============================================================================
+
+GATE_PAIRS = [
+    ("ww_3",      "east",  "teal_main",  "west"),   # Cartographer's Den
+    ("teal_main", "west",  "ww_3",       "east"),   # (symmetric — pair both directions)
+    ("ww_7",      "south", "teal_sw",    "north"),  # Lantern Court
+    ("teal_sw",   "east",  "cr_1",       "west"),   # CR-1
+    ("teal_sw",   "south", "gate_back",  "north"),  # South Gate (outer)
+    ("gate_back", "south", "garden_nw",  "north"),  # Memorial Garden
+    ("gate_main", "north", "commons_se", "south"),  # Grand Gate city gate
+    ("gate_side", "north", "stables_sw", "south"),  # Warden's Gate city gate
+]
+
+# =============================================================================
+# CODE — Step 1: Rooms
+# =============================================================================
+
+caller.msg("|y[batch_awtown] Step 1/4 — Creating rooms...|n")
+count = 0
+for entry in ROOM_DATA:
+    db_key, name, tc_key, desc = entry[0], entry[1], entry[2], entry[3]
+    _make_room(db_key, name, tc_key, desc)
+    count += 1
+caller.msg(f"|g  Created/updated {count} rooms.|n")
+
+# =============================================================================
+# CODE — Step 2: Exits
+# =============================================================================
+
+caller.msg("|y[batch_awtown] Step 2/4 — Creating exits...|n")
+count = 0
+skipped = 0
+for row in EXIT_DATA:
+    from_key, direction, alias, to_key, etype, gate_name = row
+    if etype == "city_gate":
+        tc = AwtownCityGate
+    elif etype == "gate":
+        tc = AwtownGate
+    else:
+        tc = DefaultExit
+    ex = _make_exit(from_key, direction, alias, to_key, tc=tc, gate_name=gate_name)
+    if ex:
+        count += 1
+    else:
+        skipped += 1
+caller.msg(f"|g  Created {count} exits. Skipped {skipped} (already existed or missing room).|n")
+
+# =============================================================================
+# CODE — Step 3: Pair gates
+# =============================================================================
+
+caller.msg("|y[batch_awtown] Step 3/4 — Pairing gate exits...|n")
+for from_key, from_dir, to_key, to_dir in GATE_PAIRS:
+    _pair_gates(from_key, from_dir, to_key, to_dir)
+caller.msg("|g  Gate pairs set.|n")
+
+# =============================================================================
+# CODE — Step 4: NPCs
+# =============================================================================
+
+caller.msg("|y[batch_awtown] Step 4/4 — Placing NPCs...|n")
+count = 0
+missing = []
+for row in NPC_DATA:
+    db_key, name, desc, loc_key, role = row
+    npc = _make_npc(db_key, name, desc, loc_key, role=role)
+    if npc:
+        count += 1
+    else:
+        missing.append(loc_key)
+if missing:
+    caller.msg(f"|r  Warning: could not place NPCs — missing rooms: {missing}|n")
+caller.msg(f"|g  Placed/updated {count} NPCs.|n")
+
+caller.msg("|g[batch_awtown] Complete. Awtown is ready.|n")
+

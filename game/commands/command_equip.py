@@ -60,8 +60,10 @@ class CmdWield(Command):
             return
         if isinstance(item, list):
             if len(item) > 1:
-                caller.msg(f"Which one? {list_to_string([i.key for i in item])}")
-                return
+                unique_keys = set(i.key for i in item)
+                if len(unique_keys) > 1:
+                    caller.msg(f"Which one? {list_to_string(list(unique_keys))}")
+                    return
             item = item[0]
 
         # Must be a weapon

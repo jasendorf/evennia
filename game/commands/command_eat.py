@@ -51,9 +51,12 @@ class CmdEat(Command):
             return
         if isinstance(item, list):
             if len(item) > 1:
-                matches = ", ".join(i.key for i in item)
-                caller.msg(f"Which one? {matches}")
-                return
+                # If all matches have the same key, just take the first
+                unique_keys = set(i.key for i in item)
+                if len(unique_keys) > 1:
+                    matches = ", ".join(unique_keys)
+                    caller.msg(f"Which one? {matches}")
+                    return
             item = item[0]
 
         from typeclasses.items import AwtownConsumable
@@ -127,9 +130,11 @@ class CmdDrink(Command):
             return
         if isinstance(item, list):
             if len(item) > 1:
-                matches = ", ".join(i.key for i in item)
-                caller.msg(f"Which one? {matches}")
-                return
+                unique_keys = set(i.key for i in item)
+                if len(unique_keys) > 1:
+                    matches = ", ".join(unique_keys)
+                    caller.msg(f"Which one? {matches}")
+                    return
             item = item[0]
 
         from typeclasses.items import AwtownConsumable

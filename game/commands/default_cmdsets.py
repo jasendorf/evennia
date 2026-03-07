@@ -41,7 +41,7 @@ from commands.command_combat import (
     CmdKill, CmdFlee, CmdConsider, CmdWimpy, CmdRest, CmdScore,
 )
 from commands.command_admin_combat import (
-    CmdTrainingRoom, CmdSpawnMob, CmdStopCombat, CmdCombatDebug,
+    CmdTrainingRoom, CmdSpawnMob, CmdStopCombat, CmdCombatDebug, CmdFixCombat,
 )
 
 
@@ -105,6 +105,7 @@ class CharacterCmdSet(default_cmds.CharacterCmdSet):
         self.add(CmdSpawnMob())        # @spawnmob [name]
         self.add(CmdStopCombat())      # @stopcombat
         self.add(CmdCombatDebug())     # @combatdebug / @cdebug
+        self.add(CmdFixCombat())       # @fixcombat (global cleanup)
 
         # --- Testing ---
         self.add(CmdTest())

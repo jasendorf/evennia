@@ -168,8 +168,8 @@ class CmdStopCombat(Command):
                             obj.db.combat_target = None
                     except Exception:
                         pass
-                h.stop()
-            caller.msg(f"|gStopped {count} CombatHandler(s).|n")
+                h.delete()
+            caller.msg(f"|gDeleted {count} CombatHandler(s).|n")
         else:
             caller.msg("|yNo CombatHandler found on this room.|n")
 

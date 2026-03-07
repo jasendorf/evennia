@@ -435,6 +435,26 @@ class CombatHandler(DefaultScript):
                     f"for |w{damage}|n damage!"
                 )
 
+            # Post-damage status feedback
+            is_defender_mob = (
+                getattr(defender.db, "is_mob", False)
+                if hasattr(defender, "db") else False
+            )
+            if is_defender_mob:
+                # Mob: qualitative condition to the room
+                condition = _mob_condition(defender)
+                if condition and room:
+                    room.msg_contents(f"  {def_name} {condition}.")
+            else:
+                # Player: private HP update
+                hp_now = self._get_hp(defender)
+                hp_max = defender.get_hp_max() if hasattr(defender, "get_hp_max") else 100
+                hp_color = "|g" if hp_now > hp_max * 0.5 else ("|y" if hp_now > hp_max * 0.25 else "|r")
+                if hasattr(defender, "msg"):
+                    defender.msg(
+                        f"  {hp_color}[HP: {hp_now}/{hp_max}]|n"
+                    )
+
             # Check for kill (compare against pre-damage HP)
             if hp_before > 0 and hp_before <= damage:
                 if defender not in deaths:
@@ -740,7 +760,7 @@ class CombatHandler(DefaultScript):
 
     def _end_combat(self):
         """
-        End combat. Clean up all combatants and stop the script.
+        End combat. Clean up all combatants and delete the script.
         """
         room = self.obj
         if room:
@@ -756,7 +776,9 @@ class CombatHandler(DefaultScript):
         self.db.targets = {}
         self.db.aggro_locks = {}
 
-        self.stop()
+        # Delete rather than just stop — a stopped script still shows up
+        # in scripts.get() and blocks things like mob respawn checks.
+        self.delete()
 
     def _cleanup_combatant(self, combatant):
         """Remove all combat-related temporary attributes from a combatant."""
@@ -808,3 +830,37 @@ class CombatHandler(DefaultScript):
             except Exception:
                 pass
         return getattr(combatant, "key", "something")
+
+
+# ---------------------------------------------------------------------------
+# Module-level helpers
+# ---------------------------------------------------------------------------
+
+def _mob_condition(mob):
+    """
+    Return a qualitative condition string based on a mob's HP percentage.
+
+    Returns None if the mob is at full health (no need to report).
+    """
+    hp = mob.get_hp() if hasattr(mob, "get_hp") else 0
+    hp_max = mob.get_hp_max() if hasattr(mob, "get_hp_max") else 1
+
+    if hp_max <= 0:
+        return "|xis dead|n"
+
+    ratio = hp / hp_max
+
+    if ratio >= 1.0:
+        return None  # no report at full health
+    elif ratio > 0.75:
+        return "has a few scratches"
+    elif ratio > 0.50:
+        return "|yis bleeding|n"
+    elif ratio > 0.25:
+        return "|yis badly wounded|n"
+    elif ratio > 0.10:
+        return "|ris severely hurt|n"
+    elif ratio > 0:
+        return "|r*** is nearly dead ***|n"
+    else:
+        return "|xis dead|n"

@@ -252,7 +252,7 @@ class AwtownMob(AwtownNPC):
             from evennia import create_object
             corpse = create_object(
                 Corpse,
-                key=f"the corpse of {self.key}",
+                key=f"corpse of {self.key}",
                 location=location,
             )
             corpse.db.desc = (

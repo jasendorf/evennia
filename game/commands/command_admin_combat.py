@@ -168,6 +168,20 @@ class MobRespawnScript(DefaultScript):
 
         # Clean zombies and check for REAL active combat
         if is_combat_active(room):
+            # Log this so we can diagnose stuck respawns
+            log_info(
+                f"MobRespawnScript: skipping respawn in {room.name} "
+                f"(#{room.id}) — active combat"
+            )
+            return
+
+        # Also check for lingering corpses — wait for them to decay
+        from typeclasses.corpse import Corpse
+        has_corpse = any(
+            isinstance(obj, Corpse)
+            for obj in room.contents
+        )
+        if has_corpse:
             return
 
         # Spawn mob
@@ -298,7 +312,9 @@ class CmdSpawnMob(Command):
 
         name = self.args.strip() or "a training dummy"
         mob = spawn_mob(room, name=name)
+        ensure_respawn_script(room, name)
         caller.msg(f"|gSpawned: {mob.key} (#{mob.id}) in {room.name}|n")
+        caller.msg(f"|gRespawn script ensured — {name} will respawn after death.|n")
 
 
 # ---------------------------------------------------------------------------

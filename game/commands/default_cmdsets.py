@@ -38,7 +38,7 @@ from commands.command_rent import CmdRentRoom
 
 # Phase 5 commands
 from commands.command_combat import (
-    CmdKill, CmdFlee, CmdConsider, CmdWimpy, CmdRest, CmdScore,
+    CmdKill, CmdFlee, CmdConsider, CmdWimpy, CmdRest, CmdScore, CmdLoot,
 )
 from commands.command_admin_combat import (
     CmdTrainingRoom, CmdSpawnMob, CmdStopCombat, CmdCombatDebug, CmdFixCombat,
@@ -98,6 +98,7 @@ class CharacterCmdSet(default_cmds.CharacterCmdSet):
         self.add(CmdConsider())        # consider / con <target>
         self.add(CmdWimpy())           # wimpy <hp>
         self.add(CmdRest())            # rest / recover
+        self.add(CmdLoot())            # loot [item from] [corpse]
         self.add(CmdScore())           # score / stats / sc
 
         # --- Admin: Combat (Phase 5) ---

@@ -367,6 +367,122 @@ class CmdRest(Command):
 
 
 # ---------------------------------------------------------------------------
+# loot
+# ---------------------------------------------------------------------------
+
+class CmdLoot(Command):
+    """
+    Loot items from a corpse.
+
+    Usage:
+        loot
+        loot <corpse>
+        loot <item> from <corpse>
+        get <item> from <corpse>
+
+    Without arguments, loots everything from the first corpse in the room.
+    You can specify a particular corpse or a particular item.
+
+    Examples:
+        loot
+        loot corpse
+        loot dagger from corpse
+        loot spider silk from corpse of goblin
+    """
+
+    key = "loot"
+    aliases = []
+    help_category = "Combat"
+    locks = "cmd:all()"
+
+    def func(self):
+        caller = self.caller
+        args = self.args.strip()
+
+        # Find all corpses in the room
+        from typeclasses.corpse import Corpse
+        corpses = [
+            obj for obj in caller.location.contents
+            if isinstance(obj, Corpse)
+        ]
+
+        if not corpses:
+            caller.msg("There are no corpses here to loot.")
+            return
+
+        # Parse "item from corpse" syntax
+        item_query = None
+        corpse_query = None
+
+        if " from " in args.lower():
+            parts = args.lower().split(" from ", 1)
+            item_query = parts[0].strip()
+            corpse_query = parts[1].strip()
+        elif args:
+            # Could be a corpse name or an item name — try corpse first
+            corpse_query = args.lower()
+
+        # Find the target corpse
+        if corpse_query:
+            target_corpse = None
+            for c in corpses:
+                if corpse_query in c.key.lower():
+                    target_corpse = c
+                    break
+            if not target_corpse:
+                # Maybe args is an item name, not a corpse name.
+                # Try to find the item in any corpse.
+                item_query = corpse_query
+                corpse_query = None
+                target_corpse = corpses[0]
+        else:
+            target_corpse = corpses[0]
+
+        # Get contents of the target corpse
+        contents = [obj for obj in target_corpse.contents]
+
+        if not contents:
+            caller.msg(f"{target_corpse.key} is empty.")
+            return
+
+        if item_query:
+            # Loot a specific item
+            match = None
+            for obj in contents:
+                if item_query in obj.key.lower():
+                    match = obj
+                    break
+            if not match:
+                caller.msg(
+                    f"You don't see '{item_query}' in {target_corpse.key}."
+                )
+                return
+            match.move_to(caller, quiet=True)
+            caller.msg(f"|gYou take |w{match.key}|g from {target_corpse.key}.|n")
+            caller.location.msg_contents(
+                f"|w{caller.name}|n takes {match.key} from {target_corpse.key}.",
+                exclude=[caller],
+            )
+        else:
+            # Loot everything
+            taken = []
+            for obj in contents:
+                obj.move_to(caller, quiet=True)
+                taken.append(obj.key)
+            if taken:
+                item_list = ", ".join(taken)
+                caller.msg(
+                    f"|gYou loot {target_corpse.key}: |w{item_list}|n"
+                )
+                caller.location.msg_contents(
+                    f"|w{caller.name}|n loots {target_corpse.key}.",
+                    exclude=[caller],
+                )
+            else:
+                caller.msg(f"{target_corpse.key} is empty.")
+
+
+# ---------------------------------------------------------------------------
 # score / stats
 # ---------------------------------------------------------------------------
 

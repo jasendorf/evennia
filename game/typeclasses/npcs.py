@@ -1,10 +1,5 @@
 """
 Awtown NPC typeclass.
-
-AwtownNPC extends DefaultCharacter so NPCs render in the "Characters" section
-of room descriptions (same as players). NPCs have no account and cannot be
-logged into. Their cmdsets are cleared at creation — interaction is handled
-via the dialogue system added in Phase 3.
 """
 
 from evennia.objects.objects import DefaultCharacter
@@ -15,30 +10,17 @@ class AwtownNPC(DefaultCharacter):
     Base typeclass for all Awtown NPCs.
 
     db Attributes:
-        is_npc         (bool) : Always True. Lets systems distinguish NPCs from players.
-        npc_role       (str)  : Role hint for future systems.
-                                One of: "generic", "merchant", "trainer", "guard",
-                                "quest_giver", "banker", "innkeeper", "founder".
-        dialogue       (dict) : Keyword (lowercase str) → response (str) mapping.
-                                Populated in batch_awtown.py; wired in Phase 3.
-        shop_inventory (list) : Prototype keys for the shop system (Phase 3).
-        quest_keys     (list) : Quest identifiers (Phase 4).
-
-    Example dialogue dict:
-        {
-            "hello":  "Welcome, traveller. Awtown's gates are open to all.",
-            "jobs":   "I've got deliveries piling up — speak to the Steward.",
-            "quest":  "Ask me about 'deliveries' for work.",
-        }
+        is_npc         (bool)
+        npc_role       (str)  : "generic" | "merchant" | "trainer" | "guard" |
+                                "quest_giver" | "banker" | "innkeeper" | "founder"
+        dialogue       (dict) : lowercase keyword -> response string
+        shop_inventory (list) : list of dicts: {key, name, price, desc}
+        quest_keys     (list) : quest identifiers (Phase 6)
     """
 
     def at_object_creation(self):
         super().at_object_creation()
-
-        # Clear the default character cmdset — NPCs don't use player commands.
-        # The dialogue system (Phase 3) hooks in via at_msg_receive / scripts.
         self.cmdset.clear()
-
         self.db.is_npc = True
         self.db.npc_role = "generic"
         self.db.dialogue = {}
@@ -46,17 +28,31 @@ class AwtownNPC(DefaultCharacter):
         self.db.quest_keys = []
 
     def get_display_name(self, looker, **kwargs):
-        """NPCs render their name in cyan to distinguish them from players."""
         return f"|c{self.name}|n"
 
-    def at_msg_receive(self, text=None, from_obj=None, **kwargs):
+    def hear_say(self, speaker, message):
         """
-        Placeholder for Phase 3 dialogue system.
-        NPCs will react to 'say' commands via this hook.
+        Called when someone speaks in the same room.
+        Checks db.dialogue for keyword matches and responds.
+        Matches on whole words; first match wins.
+
+        Returns True if a match was found and a response sent, else False.
+        This allows callers to stop after the first responding NPC.
         """
-        return super().at_msg_receive(text=text, from_obj=from_obj, **kwargs)
+        dialogue = self.db.dialogue or {}
+        if not dialogue:
+            return False
+
+        msg_lower = message.lower()
+        for keyword, response in dialogue.items():
+            if keyword in msg_lower:
+                self.location.msg_contents(
+                    f"|c{self.name}|n says, \"|w{response}|n\""
+                )
+                return True
+
+        return False
 
 
-# Evennia requires a class named 'Character' in typeclasses.characters.
-# npcs.py is not the default characters module, but we alias here for safety.
+# Evennia alias
 Character = AwtownNPC

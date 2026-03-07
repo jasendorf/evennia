@@ -37,6 +37,9 @@ data:
     WEBSOCKET_CLIENT_URL = "wss://dorfin.johnasendorf.com/ws"
     ALLOWED_HOSTS = ["dorfin.johnasendorf.com", "localhost", "127.0.0.1"]
     CSRF_TRUSTED_ORIGINS = ['https://dorfin.johnasendorf.com']
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+    CSRF_COOKIE_SECURE = True
+    SESSION_COOKIE_SECURE = True
     SERVERNAME = "DorfinMUD"
 
     # Override MSSP hostname so MUD clients (Mudlet) don't try to resolve the pod/node hostname
@@ -80,6 +83,12 @@ data:
         echo "=== Game directory already initialized ==="
         if ! grep -q "WEBSOCKET_CLIENT_URL" "$GAME_DIR/server/conf/settings.py"; then
             cat /config/game-settings.py >> "$GAME_DIR/server/conf/settings.py"
+        elif ! grep -q "SECURE_PROXY_SSL_HEADER" "$GAME_DIR/server/conf/settings.py"; then
+            echo "" >> "$GAME_DIR/server/conf/settings.py"
+            echo "# HTTPS proxy settings" >> "$GAME_DIR/server/conf/settings.py"
+            echo "SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')" >> "$GAME_DIR/server/conf/settings.py"
+            echo "CSRF_COOKIE_SECURE = True" >> "$GAME_DIR/server/conf/settings.py"
+            echo "SESSION_COOKIE_SECURE = True" >> "$GAME_DIR/server/conf/settings.py"
         fi
     fi
 

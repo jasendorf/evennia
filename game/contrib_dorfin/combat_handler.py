@@ -337,7 +337,7 @@ class CombatHandler(DefaultScript):
         """Execute one full combat round."""
         room = self.obj
         if not room:
-            self.stop()
+            self.delete()
             return
 
         # Expire old aggro locks

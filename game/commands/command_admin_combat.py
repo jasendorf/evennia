@@ -3,195 +3,25 @@ Admin combat commands
 =====================
 
     @trainingroom       -- create/go to training room, ensure mob + respawn
-    @spawnmob <name>    -- spawn a test mob in current room
+    @spawnmob <name>    -- spawn a test mob in current room with respawn
     @stopcombat         -- force-stop combat in current room, clear all state
     @combatdebug        -- show combat handler state for current room
     @fixcombat          -- global cleanup: nuke ALL zombie combat handlers
 
-These are builder/admin commands for testing Phase 5 combat.
+These are builder/admin commands. All infrastructure (spawning, respawn
+scripts, zombie cleanup) lives in contrib_dorfin.mob_spawner.
 """
 
 from evennia.commands.command import Command
-from evennia import create_object, DefaultScript
-from evennia.utils.logger import log_info
+from evennia import create_object
 
-
-# ---------------------------------------------------------------------------
-# Zombie cleanup utility — used by respawn, @stopcombat, @fixcombat
-# ---------------------------------------------------------------------------
-
-def cleanup_combat_zombies(room):
-    """
-    Find and delete any CombatHandler scripts on a room that are
-    inactive (zombies). Returns the count of zombies removed.
-    """
-    handlers = room.scripts.get("CombatHandler")
-    if not handlers:
-        return 0
-
-    removed = 0
-    for h in list(handlers):
-        if not h.is_active:
-            for dbref in list(h.db.combatants or []):
-                try:
-                    from evennia import search_object
-                    results = search_object(dbref)
-                    if results:
-                        results[0].db.in_combat = False
-                        results[0].db.combat_target = None
-                except Exception:
-                    pass
-            h.delete()
-            removed += 1
-
-    return removed
-
-
-def is_combat_active(room):
-    """
-    Return True only if there is a genuinely active CombatHandler
-    on this room. Cleans up zombies as a side effect.
-    """
-    cleanup_combat_zombies(room)
-    handlers = room.scripts.get("CombatHandler")
-    if not handlers:
-        return False
-    return any(h.is_active for h in handlers)
-
-
-# ---------------------------------------------------------------------------
-# Mob spawning helpers
-# ---------------------------------------------------------------------------
-
-DEFAULT_DUMMY_STATS = {
-    "str": 6, "dex": 10, "agi": 10, "con": 6, "end": 8,
-    "int": 2, "wis": 3, "per": 8, "cha": 1, "lck": 5,
-}
-
-
-def spawn_mob(room, name="a training dummy", stats=None, hp=20, level=1,
-              xp_value=10, damage_dice="1d4", armor_bonus=0, desc=None,
-              loot_table=None):
-    """
-    Spawn a mob in a room. Reusable by commands, scripts, and batch code.
-    """
-    from typeclasses.mobs import AwtownMob
-
-    mob = create_object(AwtownMob, key=name, location=room)
-
-    if desc:
-        mob.db.desc = desc
-    elif "dummy" in name:
-        mob.db.desc = (
-            "A straw-stuffed practice dummy propped up on a wooden frame. "
-            "Someone has drawn an angry face on it in charcoal."
-        )
-    else:
-        mob.db.desc = f"A {name}. It looks ready for a fight."
-
-    mob.db.stats = stats or dict(DEFAULT_DUMMY_STATS)
-    mob.db.hp = hp
-    mob.db.hp_max = hp
-    mob.db.level = level
-    mob.db.xp_value = xp_value
-    mob.db.damage_dice = damage_dice
-    mob.db.armor_bonus = armor_bonus
-    mob.db.loot_table = loot_table or [
-        {"name": "straw stuffing", "desc": "A handful of straw.",
-         "value": 1, "chance": 0.5},
-    ]
-
-    return mob
-
-
-def ensure_respawn_script(room, mob_name="a training dummy", **mob_kwargs):
-    """
-    Add a MobRespawnScript to a room if one isn't already running.
-    Updates the mob config if the script already exists.
-    """
-    existing = room.scripts.get("MobRespawnScript")
-    if existing:
-        script = existing[0]
-        script.db.mob_name = mob_name
-        script.db.mob_kwargs = mob_kwargs
-        return script
-
-    from evennia import create_script
-    script = create_script(
-        MobRespawnScript,
-        key="MobRespawnScript",
-        obj=room,
-        persistent=True,
-        autostart=True,
-    )
-    script.db.mob_name = mob_name
-    script.db.mob_kwargs = mob_kwargs
-    return script
-
-
-# ---------------------------------------------------------------------------
-# MobRespawnScript
-# ---------------------------------------------------------------------------
-
-class MobRespawnScript(DefaultScript):
-    """
-    Checks every 30 seconds if the room's mob is dead/gone and respawns it.
-
-    Attached to the room, not the mob (since the mob gets deleted on death).
-    Automatically cleans up zombie CombatHandlers before checking.
-    """
-
-    def at_script_creation(self):
-        self.key = "MobRespawnScript"
-        self.desc = "Respawns a training mob when it dies."
-        self.interval = 30
-        self.persistent = True
-        self.start_delay = True
-        self.db.mob_name = "a training dummy"
-        self.db.mob_kwargs = {}
-
-    def at_repeat(self):
-        room = self.obj
-        if not room:
-            self.stop()
-            return
-
-        # Check if a mob already exists
-        has_mob = any(
-            getattr(obj.db, "is_mob", False)
-            for obj in room.contents
-            if hasattr(obj, "db")
-        )
-
-        if has_mob:
-            return
-
-        # Clean zombies and check for REAL active combat
-        if is_combat_active(room):
-            # Log this so we can diagnose stuck respawns
-            log_info(
-                f"MobRespawnScript: skipping respawn in {room.name} "
-                f"(#{room.id}) — active combat"
-            )
-            return
-
-        # Also check for lingering corpses — wait for them to decay
-        from typeclasses.corpse import Corpse
-        has_corpse = any(
-            isinstance(obj, Corpse)
-            for obj in room.contents
-        )
-        if has_corpse:
-            return
-
-        # Spawn mob
-        mob_name = self.db.mob_name or "a training dummy"
-        mob_kwargs = self.db.mob_kwargs or {}
-        spawn_mob(room, name=mob_name, **mob_kwargs)
-
-        room.msg_contents(
-            f"|yA new {mob_name} appears, ready for a beating.|n"
-        )
+from contrib_dorfin.mob_spawner import (
+    spawn_mob,
+    spawn_and_track,
+    ensure_respawn_script,
+    cleanup_combat_zombies,
+    is_combat_active,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -265,19 +95,26 @@ class CmdTrainingRoom(Command):
             caller.msg(f"|yCleaned up {zombies} stale combat handler(s).|n")
 
         # Ensure respawn script
-        ensure_respawn_script(room, "a training dummy")
+        respawn = ensure_respawn_script(room, "a training dummy")
 
         # Spawn a dummy right now if needed
-        has_mob = any(
-            getattr(obj.db, "is_mob", False)
-            for obj in room.contents
-            if hasattr(obj, "db")
-        )
-        if not has_mob and not is_combat_active(room):
-            spawn_mob(room, "a training dummy")
-            caller.msg("|gSpawned a training dummy.|n")
-        elif has_mob:
-            caller.msg("|yA training mob is already here.|n")
+        if not respawn.is_mob_alive() and not is_combat_active(room):
+            mob, _ = spawn_and_track(
+                room, respawn_script=respawn, name="a training dummy",
+                desc=(
+                    "A straw-stuffed practice dummy propped up on a wooden "
+                    "frame. Someone has drawn an angry face on it in charcoal."
+                ),
+                hp=20, level=1, xp_value=10, damage_dice="1d4",
+                loot_table=[
+                    {"name": "straw stuffing",
+                     "desc": "A handful of straw from the dummy.",
+                     "value": 1, "chance": 0.5},
+                ],
+            )
+            caller.msg(f"|gSpawned a training dummy (tracking {mob.dbref}).|n")
+        else:
+            caller.msg("|yA training mob is already alive.|n")
 
 
 # ---------------------------------------------------------------------------
@@ -286,13 +123,14 @@ class CmdTrainingRoom(Command):
 
 class CmdSpawnMob(Command):
     """
-    Spawn a test mob in your current room.
+    Spawn a test mob in your current room with auto-respawn.
 
     Usage:
         @spawnmob
         @spawnmob <name>
 
     The room must not be safe. Default is "a training dummy".
+    A respawn script is attached so the mob returns after death.
     """
 
     key = "@spawnmob"
@@ -311,10 +149,9 @@ class CmdSpawnMob(Command):
             return
 
         name = self.args.strip() or "a training dummy"
-        mob = spawn_mob(room, name=name)
-        ensure_respawn_script(room, name)
+        mob, script = spawn_and_track(room, name=name)
         caller.msg(f"|gSpawned: {mob.key} (#{mob.id}) in {room.name}|n")
-        caller.msg(f"|gRespawn script ensured — {name} will respawn after death.|n")
+        caller.msg(f"|gRespawn script tracking {mob.dbref}.|n")
 
 
 # ---------------------------------------------------------------------------
@@ -382,8 +219,7 @@ class CmdFixCombat(Command):
         @fixcombat
 
     Run this after server restarts or when combat gets stuck.
-    Safe to run any time — it only removes inactive handlers and
-    stale flags.
+    Safe to run any time.
     """
 
     key = "@fixcombat"
@@ -395,7 +231,6 @@ class CmdFixCombat(Command):
 
         from evennia.scripts.models import ScriptDB
 
-        # Find ALL CombatHandler scripts in the game
         all_handlers = ScriptDB.objects.filter(db_key="CombatHandler")
         total = all_handlers.count()
         zombies = 0
@@ -419,7 +254,6 @@ class CmdFixCombat(Command):
             else:
                 active += 1
 
-        # Clear stale in_combat on ALL player characters
         stale_chars = 0
         try:
             from typeclasses.characters import AwtownCharacter
@@ -459,7 +293,7 @@ class CmdFixCombat(Command):
 
 class CmdCombatDebug(Command):
     """
-    Show the combat handler state for the current room.
+    Show the combat handler and mob spawner state for the current room.
 
     Usage:
         @combatdebug
@@ -486,6 +320,16 @@ class CmdCombatDebug(Command):
                 f"    {s.key} (#{s.id}) {status} interval={s.interval}"
             )
 
+        # Respawn script details
+        respawns = room.scripts.get("MobRespawnScript")
+        if respawns:
+            for rs in respawns:
+                lines.append(f"\n|w  --- MobRespawnScript (#{rs.id}) ---|n")
+                lines.append(f"    mob_name: {rs.db.mob_name}")
+                lines.append(f"    mob_dbref: {rs.db.mob_dbref}")
+                lines.append(f"    is_mob_alive: {rs.is_mob_alive()}")
+
+        # Combat handler details
         handlers = room.scripts.get("CombatHandler")
         if handlers:
             for i, h in enumerate(handlers):

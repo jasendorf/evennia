@@ -84,7 +84,7 @@ class CombatHandler(DefaultScript):
         self.desc = "Manages tick-based combat in a room."
         self.interval = COMBAT_TICK_INTERVAL
         self.persistent = True
-        self.start_delay = False    # first tick fires immediately
+        self.start_delay = True     # wait one interval before first tick
 
         self.db.combatants = []
         self.db.targets = {}
@@ -710,7 +710,14 @@ class CombatHandler(DefaultScript):
         Check if combat should end. Ends if:
         - Fewer than 2 combatants remain
         - Only one "side" remains (all mobs dead or all players gone)
+
+        Has a 1-tick grace period to avoid ending combat before all
+        combatants have been added.
         """
+        # Grace period: don't auto-end on the very first tick
+        if (self.db.tick_count or 0) < 1:
+            return
+
         combatants = self.get_combatants()
         alive = [c for c in combatants if self._is_alive(c)]
 

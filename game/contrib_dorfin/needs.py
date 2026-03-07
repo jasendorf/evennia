@@ -366,11 +366,9 @@ class NeedsHandler:
         if existing:
             return existing[0]
 
-        kwargs = {"key": "NeedsScript", "persistent": True}
-        if interval is not None:
-            kwargs["interval"] = interval
-
-        script = self.obj.scripts.add(NeedsScript, **kwargs)
+        script = self.obj.scripts.add(NeedsScript)
+        if interval is not None and script:
+            script.interval = interval
         return script
 
     def stop_script(self):

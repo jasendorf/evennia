@@ -366,7 +366,7 @@ class NeedsHandler:
         if existing:
             return existing[0]
 
-        kwargs = {"key": "NeedsScript", "obj": self.obj, "persistent": True}
+        kwargs = {"key": "NeedsScript", "persistent": True}
         if interval is not None:
             kwargs["interval"] = interval
 

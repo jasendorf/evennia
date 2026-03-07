@@ -1,14 +1,54 @@
 """
 Gate commands — open and close AwtownGate exits.
 
-These commands find AwtownGate exit objects in the caller's current room
-and delegate to their open_gate / close_gate methods.
-
-Added to CharacterCmdSet in default_cmdsets.py.
+Players can refer to a gate by:
+  - direction:  open south / open north
+  - gate name:  open iron gate / open city gate
+  - generic:    open gate  (opens the first CLOSED gate found, not the first gate)
 """
 
 from evennia.commands.command import Command
 from typeclasses.exits import AwtownGate
+
+
+def _find_gate(location, query):
+    """
+    Find a gate exit in the room matching query.
+
+    Priority:
+      1. Direction match (e.g. 'south', 's')
+      2. Key/alias/gate_name match
+      3. If query == 'gate'/'door', fall back to first CLOSED gate
+         (so 'open gate' opens something useful rather than an already-open one)
+    """
+    query = query.lower().strip()
+    gates = [obj for obj in location.exits if isinstance(obj, AwtownGate)]
+
+    if not gates:
+        return None
+
+    # 1. Direction match — exact key or alias
+    for g in gates:
+        if g.key.lower() == query:
+            return g
+        if any(a.lower() == query for a in g.aliases.all()):
+            return g
+
+    # 2. gate_name or key contains query
+    for g in gates:
+        if query in (g.db.gate_name or "").lower():
+            return g
+        if query in g.key.lower():
+            return g
+
+    # 3. Generic "gate" / "door" — prefer a closed one so the command is useful
+    if query in ("gate", "door"):
+        closed = [g for g in gates if not g.db.is_open]
+        if closed:
+            return closed[0]
+        return gates[0]
+
+    return None
 
 
 class CmdOpenGate(Command):
@@ -16,20 +56,19 @@ class CmdOpenGate(Command):
     Open a gate or door.
 
     Usage:
+        open <direction>
         open <gate name>
         open gate
-        open door
-        open north
 
-    Opens a closed gate exit in your current location. Gate exits are the
-    heavy iron-banded doors and courtyard gates shown on orange connectors
-    on the town map. City gates are managed by guards and open automatically
-    during the day.
+    You can refer to a gate by the direction it leads (recommended when
+    multiple gates are in the room), by its name, or generically as 'gate'.
+    When using 'open gate' generically, the command prefers a closed gate.
 
     Examples:
+        open south
+        open east
         open gate
         open city gate
-        open iron gate
     """
 
     key = "open"
@@ -42,29 +81,24 @@ class CmdOpenGate(Command):
         query = self.args.strip().lower()
 
         if not query:
-            caller.msg("Open what?")
+            caller.msg("Open what? Specify a direction or gate name (e.g. 'open south').")
             return
 
-        gates = [
-            obj for obj in caller.location.exits
-            if isinstance(obj, AwtownGate) and (
-                query in obj.key.lower()
-                or query in (obj.db.gate_name or "").lower()
-                or any(query in a.lower() for a in obj.aliases.all())
-            )
-        ]
+        gate = _find_gate(caller.location, query)
 
-        if not gates:
+        if not gate:
             caller.msg(f"You don't see a gate or door called '{self.args.strip()}' here.")
             return
 
-        gate = gates[0]
         if gate.db.is_open:
-            caller.msg(f"The {gate.db.gate_name} is already open.")
+            caller.msg(
+                f"The {gate.db.gate_name} to the {gate.key} is already open. "
+                f"If you meant a different gate, specify its direction (e.g. 'open south')."
+            )
             return
 
         gate.open_gate(opener=caller)
-        caller.msg(f"You push open the {gate.db.gate_name}.")
+        caller.msg(f"You push open the {gate.db.gate_name} ({gate.key}).")
 
 
 class CmdCloseGate(Command):
@@ -72,16 +106,14 @@ class CmdCloseGate(Command):
     Close a gate or door.
 
     Usage:
+        close <direction>
         close <gate name>
         close gate
-        close door
-
-    Closes an open gate exit in your current location. Note that most gates
-    close automatically after a short time.
 
     Examples:
+        close south
         close gate
-        close iron gate
+        close city gate
     """
 
     key = "close"
@@ -94,26 +126,18 @@ class CmdCloseGate(Command):
         query = self.args.strip().lower()
 
         if not query:
-            caller.msg("Close what?")
+            caller.msg("Close what? Specify a direction or gate name (e.g. 'close south').")
             return
 
-        gates = [
-            obj for obj in caller.location.exits
-            if isinstance(obj, AwtownGate) and (
-                query in obj.key.lower()
-                or query in (obj.db.gate_name or "").lower()
-                or any(query in a.lower() for a in obj.aliases.all())
-            )
-        ]
+        gate = _find_gate(caller.location, query)
 
-        if not gates:
+        if not gate:
             caller.msg(f"You don't see a gate or door called '{self.args.strip()}' here.")
             return
 
-        gate = gates[0]
         if not gate.db.is_open:
-            caller.msg(f"The {gate.db.gate_name} is already closed.")
+            caller.msg(f"The {gate.db.gate_name} to the {gate.key} is already closed.")
             return
 
         gate.close_gate(closer=caller)
-        caller.msg(f"You pull the {gate.db.gate_name} shut.")
+        caller.msg(f"You pull the {gate.db.gate_name} ({gate.key}) shut.")

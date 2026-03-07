@@ -101,8 +101,8 @@ class CmdBuff(Command):
             return
 
         now = time.time()
-        last = caller.db.get(buff_data["last_attr"]) or 0
-        expires = caller.db.get(buff_data["attr"]) or 0
+        last = caller.attributes.get(buff_data["last_attr"]) or 0
+        expires = caller.attributes.get(buff_data["attr"]) or 0
 
         # Check cooldown
         if now - last < buff_data["cooldown"] and last > 0:
@@ -118,7 +118,7 @@ class CmdBuff(Command):
         caller.attributes.add(buff_data["attr"], now + buff_data["duration"])
         caller.attributes.add(buff_data["last_attr"], now)
         for attr, val in buff_data["effect"].items():
-            current = caller.db.get(attr) or 0
+            current = caller.attributes.get(attr) or 0
             caller.attributes.add(attr, current + val)
 
         caller.msg(buff_data["msg_give"])
@@ -149,7 +149,7 @@ class CmdBuffs(Command):
         any_active = False
 
         for tag_key, data in FOUNDER_BUFFS.items():
-            expires = caller.db.get(data["attr"]) or 0
+            expires = caller.attributes.get(data["attr"]) or 0
             if expires > now:
                 remaining = expires - now
                 lines.append(

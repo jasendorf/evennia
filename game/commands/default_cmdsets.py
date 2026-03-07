@@ -40,6 +40,9 @@ from commands.command_rent import CmdRentRoom
 from commands.command_combat import (
     CmdKill, CmdFlee, CmdConsider, CmdWimpy, CmdRest, CmdScore,
 )
+from commands.command_admin_combat import (
+    CmdTrainingRoom, CmdSpawnMob, CmdStopCombat, CmdCombatDebug,
+)
 
 
 class CharacterCmdSet(default_cmds.CharacterCmdSet):
@@ -96,6 +99,12 @@ class CharacterCmdSet(default_cmds.CharacterCmdSet):
         self.add(CmdWimpy())           # wimpy <hp>
         self.add(CmdRest())            # rest / recover
         self.add(CmdScore())           # score / stats / sc
+
+        # --- Admin: Combat (Phase 5) ---
+        self.add(CmdTrainingRoom())    # @trainingroom
+        self.add(CmdSpawnMob())        # @spawnmob [name]
+        self.add(CmdStopCombat())      # @stopcombat
+        self.add(CmdCombatDebug())     # @combatdebug / @cdebug
 
         # --- Testing ---
         self.add(CmdTest())

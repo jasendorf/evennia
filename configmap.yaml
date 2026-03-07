@@ -52,6 +52,18 @@ data:
     TELNET_INTERFACES = ["0.0.0.0"]
     START_LOCATION = "#86"
     DEFAULT_HOME   = "#171"
+    BASE_CHARACTER_TYPECLASS = "typeclasses.characters.AwtownCharacter"
+    CLOTHING_TYPE_ORDERED = [
+        "hat", "jewelry", "cloak", "top", "undershirt", "gloves",
+        "fullbody", "bottom", "underpants", "socks", "shoes", "accessory"
+    ]
+    CLOTHING_TYPE_LIMIT = {
+        "hat": 1,
+        "gloves": 1,
+        "socks": 1,
+        "shoes": 1,
+    }
+    CLOTHING_OVERALL_LIMIT = 20
 
   main-content.html: |
     <h1 class="card-title">Welcome to DorfinMUD!</h1>

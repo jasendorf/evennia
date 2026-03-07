@@ -7,6 +7,7 @@ Central hub that wires together:
     - ClothedCharacter   (evennia.contrib.game_systems.clothing)
     - TraitHandler       (evennia.contrib.rpg.traits)
     - BuffHandler        (evennia.contrib.rpg.buffs)
+    - CooldownHandler    (evennia.contrib.game_systems.cooldowns)
     - DorfinNeedsMixin   (contrib_dorfin.dorfin_needs)
 
 Character stats (10):
@@ -22,6 +23,13 @@ Currency:
 Equipment slots:
     db.equipment — dict mapping slot name to object dbref or None.
     Slots: weapon, offhand, head, chest, legs, feet, hands.
+
+Combat (Phase 5):
+    db.xp            — int, experience points (default 0)
+    db.level         — int, character level (default 1)
+    db.wimpy         — int, auto-flee HP threshold (0 = disabled)
+    db.in_combat     — bool, set by CombatHandler during fights
+    db.combat_target — obj ref, set by CombatHandler
 
 Starter kit flag:
     db.kit_claimed — bool, False until CmdClaimKit is used.
@@ -53,8 +61,26 @@ except ImportError:
     BuffHandler = None
     _BUFFS_AVAILABLE = False
 
+# Cooldowns contrib — rescue cooldown, future ability cooldowns
+try:
+    from evennia.contrib.game_systems.cooldowns import CooldownHandler
+    _COOLDOWNS_AVAILABLE = True
+except ImportError:
+    CooldownHandler = None
+    _COOLDOWNS_AVAILABLE = False
+
 # DorfinMUD needs (hunger + thirst)
 from contrib_dorfin.dorfin_needs import DorfinNeedsMixin
+
+
+# ---------------------------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------------------------
+
+XP_DEATH_PENALTY = 0.10   # lose 10% of XP on death
+RESPAWN_HP_RATIO = 0.25   # respawn with 25% of max HP
+RESPAWN_ROOM_TAG = "temple_nw"   # tag on the room to respawn in
+RESPAWN_TAG_CATEGORY = "awtown_dbkey"
 
 
 # ---------------------------------------------------------------------------
@@ -92,15 +118,21 @@ class AwtownCharacter(DorfinNeedsMixin, ClothedCharacter):
         ClothedCharacter  -> DefaultCharacter     -> (clothing + base Evennia)
 
     Properties available after at_object_creation:
-        self.traits   -- TraitHandler (HP, 10 base stats)
-        self.buffs    -- BuffHandler  (founder buffs, armour mods, need penalties)
-        self.needs    -- NeedsHandler (hunger, thirst -- via DorfinNeedsMixin)
+        self.traits     -- TraitHandler    (HP, 10 base stats)
+        self.buffs      -- BuffHandler     (founder buffs, armour mods, need penalties)
+        self.needs      -- NeedsHandler    (hunger, thirst -- via DorfinNeedsMixin)
+        self.cooldowns  -- CooldownHandler (rescue, future ability cooldowns)
 
     Attributes set at creation:
-        db.copper           -- int, currency (default 0)
-        db.equipment        -- dict, worn weapon/armour slots
-        db.kit_claimed      -- bool, starter kit flag
+        db.copper            -- int, currency (default 0)
+        db.equipment         -- dict, worn weapon/armour slots
+        db.kit_claimed       -- bool, starter kit flag
         db.founder_cooldowns -- dict, used by command_founder.py
+        db.xp                -- int, experience points (default 0)
+        db.level             -- int, character level (default 1)
+        db.wimpy             -- int, auto-flee threshold (default 0 = disabled)
+        db.in_combat         -- bool, currently in combat (managed by CombatHandler)
+        db.combat_target     -- dbref, current combat target (managed by CombatHandler)
     """
 
     # ------------------------------------------------------------------
@@ -121,6 +153,13 @@ class AwtownCharacter(DorfinNeedsMixin, ClothedCharacter):
             return BuffHandler(self)
         return None
 
+    @lazy_property
+    def cooldowns(self):
+        """CooldownHandler for combat abilities and rate-limited actions."""
+        if _COOLDOWNS_AVAILABLE:
+            return CooldownHandler(self, db_attribute="cooldowns")
+        return None
+
     # ------------------------------------------------------------------
     # Creation
     # ------------------------------------------------------------------
@@ -135,6 +174,7 @@ class AwtownCharacter(DorfinNeedsMixin, ClothedCharacter):
         self._init_traits()
         self._init_currency()
         self._init_equipment()
+        self._init_combat()
         self._init_flags()
 
     def _init_traits(self):
@@ -172,6 +212,19 @@ class AwtownCharacter(DorfinNeedsMixin, ClothedCharacter):
         """Initialise all equipment slots to None."""
         if not self.db.equipment:
             self.db.equipment = {slot: None for slot in EQUIPMENT_SLOTS}
+
+    def _init_combat(self):
+        """Initialise combat-related attributes."""
+        if self.db.xp is None:
+            self.db.xp = 0
+        if self.db.level is None:
+            self.db.level = 1
+        if self.db.wimpy is None:
+            self.db.wimpy = 0
+        if self.db.in_combat is None:
+            self.db.in_combat = False
+        if self.db.combat_target is None:
+            self.db.combat_target = None
 
     def _init_flags(self):
         """Initialise one-time flags."""
@@ -240,6 +293,10 @@ class AwtownCharacter(DorfinNeedsMixin, ClothedCharacter):
             return int(self.traits.hp.max)
         return 100
 
+    def is_alive(self):
+        """Return True if this character has HP remaining."""
+        return self.get_hp() > 0
+
     def heal(self, amount):
         """
         Restore HP by amount, capped at max.
@@ -284,15 +341,81 @@ class AwtownCharacter(DorfinNeedsMixin, ClothedCharacter):
 
         return actual
 
+    # ------------------------------------------------------------------
+    # Death
+    # ------------------------------------------------------------------
+
     def at_death(self):
         """
-        Called when HP reaches 0. Placeholder for Phase 5 (combat).
-        Sends a message and restores HP to 1.
+        Called when HP reaches 0.
+
+        Death flow:
+            1. Lose XP_DEATH_PENALTY (10%) of current XP.
+            2. Display death message.
+            3. Teleport to The Nave (temple_nw).
+            4. Restore HP to RESPAWN_HP_RATIO (25%) of max.
+            5. Combat handler removes us from the fight.
         """
-        self.msg("|rYou have been defeated!|n")
-        # Temporary -- full death handling in Phase 5
+        # 1. XP penalty
+        current_xp = self.db.xp or 0
+        if current_xp > 0:
+            xp_lost = max(1, int(current_xp * XP_DEATH_PENALTY))
+            self.db.xp = max(0, current_xp - xp_lost)
+            xp_msg = f"You lost |r{xp_lost}|n experience points."
+        else:
+            xp_msg = ""
+
+        # 2. Death message
+        self.msg(
+            "\n|r" + "=" * 50 + "|n\n"
+            "|r  You have been defeated!|n\n"
+            "|r  The world goes dark...|n\n"
+            "|r" + "=" * 50 + "|n\n"
+        )
+        if xp_msg:
+            self.msg(xp_msg)
+
+        # 3. Teleport to respawn point
+        respawn_room = self._find_respawn_room()
+        if respawn_room and respawn_room != self.location:
+            # Move quietly — we'll describe the arrival ourselves
+            self.move_to(respawn_room, quiet=True, move_type="teleport")
+            self.msg(
+                "\n|xYou awaken on a cold stone floor. Torchlight flickers above.\n"
+                "The priests of the Temple have pulled you back from the brink.|n\n"
+            )
+            respawn_room.msg_contents(
+                f"|x{self.name} materialises on the floor, gasping for breath.|n",
+                exclude=[self],
+            )
+
+        # 4. Restore HP to 25% of max
+        hp_max = self.get_hp_max()
+        respawn_hp = max(1, int(hp_max * RESPAWN_HP_RATIO))
         if _TRAITS_AVAILABLE and self.traits and self.traits.get("hp"):
-            self.traits.hp.current = 1
+            self.traits.hp.current = respawn_hp
+        else:
+            self.db.hp = respawn_hp
+
+        self.msg(f"|yYou have {respawn_hp}/{hp_max} HP. Rest and recover.|n")
+
+        # 5. Clear combat state (CombatHandler also does this, but be safe)
+        self.db.in_combat = False
+        self.db.combat_target = None
+
+    def _find_respawn_room(self):
+        """
+        Find the respawn room (The Nave — temple_nw).
+
+        Returns:
+            Room object, or None if not found.
+        """
+        try:
+            import evennia
+            results = evennia.search_tag(RESPAWN_ROOM_TAG, category=RESPAWN_TAG_CATEGORY)
+            return results[0] if results else None
+        except Exception:
+            return None
 
     # ------------------------------------------------------------------
     # Currency helpers

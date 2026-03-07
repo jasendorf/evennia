@@ -10,7 +10,7 @@ Phase completion status:
     Phase 2  -- Batch script (103 rooms, all NPCs)       COMPLETE
     Phase 3  -- Dialogue, shops, founder buffs, kit      COMPLETE
     Phase 4  -- Character, items, needs, equipment       COMPLETE
-    Phase 5  -- Combat (attack, flee, XP, loot)          PENDING
+    Phase 5  -- Combat (attack, flee, XP, loot)          COMPLETE
     Phase 6  -- Quests                                   PENDING
 """
 
@@ -35,6 +35,11 @@ from commands.command_kit import CmdClaimKit
 from commands.command_equip import CmdWield, CmdUnwield, CmdEq
 from commands.command_eat import CmdEat, CmdDrink
 from commands.command_rent import CmdRentRoom
+
+# Phase 5 commands
+from commands.command_combat import (
+    CmdKill, CmdFlee, CmdConsider, CmdWimpy, CmdRest, CmdScore,
+)
 
 
 class CharacterCmdSet(default_cmds.CharacterCmdSet):
@@ -83,6 +88,14 @@ class CharacterCmdSet(default_cmds.CharacterCmdSet):
 
         # --- Rest ---
         self.add(CmdRentRoom())        # rent room (at Inn Counter)
+
+        # --- Combat (Phase 5) ---
+        self.add(CmdKill())            # kill / attack / k <target>
+        self.add(CmdFlee())            # flee / retreat / run
+        self.add(CmdConsider())        # consider / con <target>
+        self.add(CmdWimpy())           # wimpy <hp>
+        self.add(CmdRest())            # rest / recover
+        self.add(CmdScore())           # score / stats / sc
 
         # --- Testing ---
         self.add(CmdTest())

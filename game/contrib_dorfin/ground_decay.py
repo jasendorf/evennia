@@ -158,6 +158,17 @@ class GroundDecayMixin:
     then defaults to level 1 (2 minutes).
     """
 
+    def at_init(self):
+        """Called on server reload. Start decay if already on the ground."""
+        super().at_init()
+        if getattr(self.db, "no_decay", False):
+            return
+        if _is_on_ground(self):
+            # Only start if no decay script already running
+            existing = self.scripts.get("GroundDecayScript")
+            if not existing:
+                _start_decay(self)
+
     def at_after_move(self, source_location, **kwargs):
         """Called after the item is moved to a new location."""
         super().at_after_move(source_location, **kwargs)

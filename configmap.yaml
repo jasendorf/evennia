@@ -41,12 +41,7 @@ data:
 
     WEBSOCKET_CLIENT_URL = "wss://dorfin.johnasendorf.com/ws"
     ALLOWED_HOSTS = ["dorfin.johnasendorf.com", "localhost", "127.0.0.1", "192.168.50.200", "192.168.50.201", "192.168.50.202"]
-    CSRF_TRUSTED_ORIGINS = [
-        'https://dorfin.johnasendorf.com',
-        'http://192.168.50.200:31314',
-        'http://192.168.50.201:31314',
-        'http://192.168.50.202:31314',
-    ]
+    CSRF_TRUSTED_ORIGINS = ['https://dorfin.johnasendorf.com', 'http://192.168.50.200:31314', 'http://192.168.50.201:31314', 'http://192.168.50.202:31314']
     SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
     SERVERNAME = "DorfinMUD"
 
@@ -115,8 +110,11 @@ data:
         sed -i '/^CSRF_TRUSTED_ORIGINS/d' "$GAME_DIR/server/conf/settings.py"
         sed -i '/^CSRF_COOKIE_SECURE/d' "$GAME_DIR/server/conf/settings.py"
         sed -i '/^SESSION_COOKIE_SECURE/d' "$GAME_DIR/server/conf/settings.py"
+        # Clean up orphaned indented lines from old multi-line CSRF_TRUSTED_ORIGINS
+        sed -i "/^    'http/d" "$GAME_DIR/server/conf/settings.py"
+        sed -i '/^\]$/d' "$GAME_DIR/server/conf/settings.py"
         grep '^ALLOWED_HOSTS' /config/game-settings.py >> "$GAME_DIR/server/conf/settings.py"
-        grep -A5 '^CSRF_TRUSTED_ORIGINS' /config/game-settings.py >> "$GAME_DIR/server/conf/settings.py"
+        grep '^CSRF_TRUSTED_ORIGINS' /config/game-settings.py >> "$GAME_DIR/server/conf/settings.py"
     fi
 
     # Copy custom homepage template

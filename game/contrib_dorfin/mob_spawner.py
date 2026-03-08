@@ -277,6 +277,9 @@ class MobRespawnScript(DefaultScript):
         self.db.mob_name = "a mob"
         self.db.mob_dbref = None
         self.db.mob_kwargs = {}
+        self.db.tick_count = 0
+        self.db.last_alive_tick = True
+        self.db.death_noticed_at = None
 
     def at_init(self):
         """Called on every server reload. Fix start_delay on old scripts."""
@@ -289,6 +292,8 @@ class MobRespawnScript(DefaultScript):
         if not room:
             self.stop()
             return
+
+        self.db.tick_count = (self.db.tick_count or 0) + 1
 
         try:
             self._do_respawn_check(room)
@@ -307,34 +312,21 @@ class MobRespawnScript(DefaultScript):
         """Normal respawn logic, separated out for error handling."""
         # 1. Check if the tracked mob still exists ANYWHERE
         if self.is_mob_alive():
+            self.db.last_alive_tick = True
             return
 
-        # 2. Mob is gone. Clean zombie combat handlers on the home room.
+        # 2. Mob is gone. Record when we first noticed.
+        if self.db.last_alive_tick:
+            self.db.last_alive_tick = False
+            self.db.death_noticed_at = self.db.tick_count or 0
+
+        # 3. Clean zombie combat handlers on the home room.
         if is_combat_active(room):
-            log_info(
-                f"MobRespawnScript: skipping respawn in {room.name} "
-                f"(#{room.id}) — active combat"
-            )
             return
 
-        # 3. Wait for corpses to decay in the home room
-        try:
-            from typeclasses.corpse import Corpse
-            has_corpse = any(
-                isinstance(obj, Corpse)
-                for obj in room.contents
-            )
-        except Exception:
-            # If Corpse import fails, check by key name instead
-            has_corpse = any(
-                "corpse" in getattr(obj, "key", "").lower()
-                for obj in room.contents
-            )
-
-        if has_corpse:
-            return
-
-        # 4. Spawn a fresh mob and track it
+        # 4. Spawn a fresh mob — don't wait for corpses.
+        #    Corpses are just loot containers; a new mob and an old
+        #    corpse can coexist in the same room with no issues.
         self._spawn_fresh(room)
 
     def _spawn_fresh(self, room):

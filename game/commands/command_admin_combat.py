@@ -328,6 +328,14 @@ class CmdCombatDebug(Command):
                 lines.append(f"    mob_name: {rs.db.mob_name}")
                 lines.append(f"    mob_dbref: {rs.db.mob_dbref}")
                 lines.append(f"    is_mob_alive: {rs.is_mob_alive()}")
+                lines.append(f"    tick_count: {rs.db.tick_count or 0}")
+                lines.append(f"    interval: {rs.interval}s")
+                lines.append(f"    is_active: {rs.is_active}")
+                lines.append(f"    start_delay: {rs.start_delay}")
+                lines.append(f"    last_alive_tick: {getattr(rs.db, 'last_alive_tick', '?')}")
+                lines.append(f"    death_noticed_at: {getattr(rs.db, 'death_noticed_at', '?')}")
+        else:
+            lines.append("\n  |yNo MobRespawnScript on this room.|n")
 
         # Combat handler details
         handlers = room.scripts.get("CombatHandler")

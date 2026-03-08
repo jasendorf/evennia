@@ -19,7 +19,7 @@ spec:
       labels:
         app: evennia
       annotations:
-        deployment.dorfin.io/commit: "bbef7300e0192ae1cfff1c5a56222a3549a3ad73"
+        deployment.dorfin.io/commit: "f9cb509adb11172f2cb4a9388fa5016b2b2cc712"
     spec:
       initContainers:
         - name: git-sync
@@ -47,8 +47,10 @@ spec:
               apk add --no-cache rsync > /dev/null 2>&1
 
               # Repo-managed directories — only these get --delete treatment.
-              # Everything else on the PVC (server/, db.sqlite3, logs, etc.) is untouched.
-              SYNC_DIRS="commands typeclasses contrib contrib_dorfin world web"
+              # web/ is NOT included: Evennia generates web/urls.py and other
+              # files at init time that must not be deleted.
+              # Everything else on the PVC (server/, db, logs) is also untouched.
+              SYNC_DIRS="commands typeclasses contrib contrib_dorfin world"
 
               echo "=== Syncing repo-managed directories ==="
               for dir in $SYNC_DIRS; do
@@ -57,7 +59,6 @@ spec:
                   rsync -a --delete "$SYNC_DIR/game/$dir/" "$GAME_DIR/$dir/"
                   echo "  synced $dir/"
                 else
-                  # Directory removed from repo — clean it from the PVC too
                   if [ -d "$GAME_DIR/$dir" ]; then
                     rm -rf "$GAME_DIR/$dir"
                     echo "  removed $dir/ (no longer in repo)"
@@ -65,10 +66,17 @@ spec:
                 fi
               done
 
-              # Copy any top-level files from game/ (e.g. __init__.py) without --delete
+              # web/ gets overlay only (cp -a), never --delete.
+              # Preserves Evennia-generated files like web/urls.py.
+              if [ -d "$SYNC_DIR/game/web" ]; then
+                cp -a "$SYNC_DIR/game/web/." "$GAME_DIR/web/"
+                echo "  overlaid web/ (no delete)"
+              fi
+
+              # Copy any top-level files from game/ (e.g. __init__.py)
               find "$SYNC_DIR/game" -maxdepth 1 -type f -exec cp -a {} "$GAME_DIR/" \;
 
-              # Purge __pycache__ everywhere under the game dir to prevent stale bytecode
+              # Purge __pycache__ to prevent stale bytecode
               find "$GAME_DIR" -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
 
               echo "=== Game code sync complete ==="

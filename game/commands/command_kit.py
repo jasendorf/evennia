@@ -37,12 +37,14 @@ ROOM_TAG_CAT   = "awtown_dbkey"
 STARTER_KIT_CLOTHING = [
     {
         "name": "Simple Tunic",
+        "aliases": ["tunic"],
         "desc": "A plain but sturdy linen tunic. Comfortable for travel.",
         "value": 2,
         "clothing_type": "top",
     },
     {
         "name": "Simple Trousers",
+        "aliases": ["trousers", "pants"],
         "desc": "Plain travelling trousers, well-made if unadorned.",
         "value": 2,
         "clothing_type": "bottom",
@@ -52,6 +54,7 @@ STARTER_KIT_CLOTHING = [
 STARTER_KIT_CONSUMABLES = [
     {
         "name": "Hunk of Bread",
+        "aliases": ["bread", "hunk"],
         "desc": "A dense, filling hunk of bread. Not exciting, but it travels well.",
         "value": 1,
         "nutrition": 25,
@@ -60,6 +63,7 @@ STARTER_KIT_CONSUMABLES = [
     },
     {
         "name": "Hunk of Bread",
+        "aliases": ["bread", "hunk"],
         "desc": "A dense, filling hunk of bread. Not exciting, but it travels well.",
         "value": 1,
         "nutrition": 25,
@@ -70,6 +74,7 @@ STARTER_KIT_CONSUMABLES = [
 
 STARTER_KIT_DRINKABLE = {
     "name": "Waterskin",
+    "aliases": ["skin", "water"],
     "desc": "A leather waterskin, full of clean water. Good for several drinks.",
     "value": 3,
     "sips": 5,
@@ -80,6 +85,7 @@ STARTER_KIT_DRINKABLE = {
 
 STARTER_KIT_CONTAINER = {
     "name": "Belt Pouch",
+    "aliases": ["pouch", "belt"],
     "desc": "A small leather pouch that attaches to a belt. Holds coins and small items.",
     "value": 5,
     "capacity": 10,
@@ -111,6 +117,7 @@ STARTER_KIT_ITEMS = [
 STARTER_WEAPONS = {
     "sword": {
         "name": "Wooden Practice Sword",
+        "aliases": ["sword", "practice sword"],
         "desc": (
             "A blunt-edged sword carved from hardwood. It won't cut anything, "
             "but it'll leave a bruise. Every adventurer starts somewhere."
@@ -122,6 +129,7 @@ STARTER_WEAPONS = {
     },
     "club": {
         "name": "Crude Wooden Club",
+        "aliases": ["club"],
         "desc": (
             "A heavy length of knotted oak with leather wrapped around one end "
             "for a grip. Simple, brutal, effective."
@@ -133,6 +141,7 @@ STARTER_WEAPONS = {
     },
     "staff": {
         "name": "Light Wooden Staff",
+        "aliases": ["staff"],
         "desc": (
             "A smooth ash staff, head-height and well-balanced. Good for "
             "walking, better for cracking skulls. Mages and monks favor these."
@@ -144,6 +153,7 @@ STARTER_WEAPONS = {
     },
     "dagger": {
         "name": "Dull Iron Dagger",
+        "aliases": ["dagger"],
         "desc": (
             "A short iron blade that's seen better days. The edge is gone, "
             "but the point still works. Quick in the right hands."
@@ -168,6 +178,9 @@ def _create_clothing(data, location):
     obj.db.value = data.get("value", 0)
     obj.db.clothing_type = data.get("clothing_type", "accessory")
     obj.db.stat_mods = data.get("stat_mods", {})
+    if data.get("aliases"):
+        for alias in data["aliases"]:
+            obj.aliases.add(alias)
     return obj
 
 
@@ -180,6 +193,9 @@ def _create_consumable(data, location):
     obj.db.nutrition = data.get("nutrition", 0)
     obj.db.hydration = data.get("hydration", 0)
     obj.db.hp_restore = data.get("hp_restore", 0)
+    if data.get("aliases"):
+        for alias in data["aliases"]:
+            obj.aliases.add(alias)
     return obj
 
 
@@ -189,6 +205,9 @@ def _create_item(data, location):
     obj = create_object(AwtownItem, key=data["name"], location=location)
     obj.db.desc = data["desc"]
     obj.db.value = data.get("value", 0)
+    if data.get("aliases"):
+        for alias in data["aliases"]:
+            obj.aliases.add(alias)
     return obj
 
 
@@ -202,6 +221,9 @@ def _create_drinkable(data, location):
     obj.db.sips_max = data.get("sips_max", 5)
     obj.db.hydration_per = data.get("hydration_per", 10)
     obj.db.hp_per = data.get("hp_per", 0)
+    if data.get("aliases"):
+        for alias in data["aliases"]:
+            obj.aliases.add(alias)
     return obj
 
 
@@ -212,6 +234,9 @@ def _create_container(data, location):
     obj.db.desc = data["desc"]
     obj.db.value = data.get("value", 0)
     obj.db.capacity = data.get("capacity", 10)
+    if data.get("aliases"):
+        for alias in data["aliases"]:
+            obj.aliases.add(alias)
     return obj
 
 
@@ -224,6 +249,9 @@ def _create_weapon(data, location):
     obj.db.slot = data.get("slot", "weapon")
     obj.db.damage_dice = data.get("damage_dice", "1d4")
     obj.db.damage_bonus = data.get("damage_bonus", 0)
+    if data.get("aliases"):
+        for alias in data["aliases"]:
+            obj.aliases.add(alias)
     return obj
 
 

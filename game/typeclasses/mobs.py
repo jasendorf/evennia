@@ -59,7 +59,6 @@ Death flow
 
 from random import random
 
-from evennia.objects.objects import DefaultObject
 from evennia.utils.logger import log_err
 
 from typeclasses.npcs import AwtownNPC
@@ -321,19 +320,21 @@ class AwtownMob(AwtownNPC):
             except Exception:
                 pass
 
-        # Fallback: create a basic item
+        # Fallback: create a basic item (with decay support)
         name = entry.get("name", "something")
         desc = entry.get("desc", "A dropped item.")
         value = entry.get("value", 1)
 
         try:
+            from typeclasses.items import AwtownItem
             obj = create_object(
-                DefaultObject,
+                AwtownItem,
                 key=name,
                 location=location,
             )
             obj.db.desc = desc
             obj.db.value = value
+            obj.db.item_level = self.db.level or 1
             return obj
         except Exception as err:
             log_err(f"AwtownMob._create_loot_item: failed: {err}")

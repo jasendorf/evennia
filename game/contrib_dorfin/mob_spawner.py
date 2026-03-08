@@ -284,6 +284,21 @@ class MobRespawnScript(DefaultScript):
             self.stop()
             return
 
+        try:
+            self._do_respawn_check(room)
+        except Exception as err:
+            # NEVER silently fail — log and try to spawn anyway
+            log_info(
+                f"MobRespawnScript ERROR in {room.name} (#{room.id}): {err}"
+            )
+            # Emergency spawn — skip all checks, just make a mob
+            try:
+                self._emergency_spawn(room)
+            except Exception as err2:
+                log_info(f"MobRespawnScript EMERGENCY SPAWN FAILED: {err2}")
+
+    def _do_respawn_check(self, room):
+        """Normal respawn logic, separated out for error handling."""
         # 1. Check if the tracked mob still exists ANYWHERE
         if self.is_mob_alive():
             return
@@ -297,15 +312,27 @@ class MobRespawnScript(DefaultScript):
             return
 
         # 3. Wait for corpses to decay in the home room
-        from typeclasses.corpse import Corpse
-        has_corpse = any(
-            isinstance(obj, Corpse)
-            for obj in room.contents
-        )
+        try:
+            from typeclasses.corpse import Corpse
+            has_corpse = any(
+                isinstance(obj, Corpse)
+                for obj in room.contents
+            )
+        except Exception:
+            # If Corpse import fails, check by key name instead
+            has_corpse = any(
+                "corpse" in getattr(obj, "key", "").lower()
+                for obj in room.contents
+            )
+
         if has_corpse:
             return
 
         # 4. Spawn a fresh mob and track it
+        self._spawn_fresh(room)
+
+    def _spawn_fresh(self, room):
+        """Spawn a fresh mob at the home room."""
         mob_name = self.db.mob_name or "a mob"
         mob_kwargs = dict(self.db.mob_kwargs or {})
         mob_kwargs["name"] = mob_name
@@ -315,6 +342,20 @@ class MobRespawnScript(DefaultScript):
 
         room.msg_contents(
             f"|yA new {mob_name} appears.|n"
+        )
+        log_info(
+            f"MobRespawnScript: spawned {mob_name} ({mob.dbref}) "
+            f"in {room.name} (#{room.id})"
+        )
+
+    def _emergency_spawn(self, room):
+        """Last-resort spawn when normal checks error out."""
+        mob_name = self.db.mob_name or "a mob"
+        mob = spawn_mob(room, name=mob_name)
+        self.db.mob_dbref = mob.dbref
+        log_info(
+            f"MobRespawnScript: EMERGENCY spawned {mob_name} ({mob.dbref}) "
+            f"in {room.name} (#{room.id})"
         )
 
     def is_mob_alive(self):

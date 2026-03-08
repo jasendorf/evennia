@@ -9,12 +9,17 @@ data:
         listen 80;
         server_name _;
 
+        set $forwarded_proto $http_x_forwarded_proto;
+        if ($forwarded_proto = '') {
+            set $forwarded_proto $scheme;
+        }
+
         location / {
             proxy_pass http://localhost:4001;
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-            proxy_set_header X-Forwarded-Proto https;
+            proxy_set_header X-Forwarded-Proto $forwarded_proto;
         }
 
         location /ws {
@@ -25,7 +30,7 @@ data:
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-            proxy_set_header X-Forwarded-Proto https;
+            proxy_set_header X-Forwarded-Proto $forwarded_proto;
             proxy_read_timeout 86400;
         }
     }
@@ -36,10 +41,13 @@ data:
 
     WEBSOCKET_CLIENT_URL = "wss://dorfin.johnasendorf.com/ws"
     ALLOWED_HOSTS = ["dorfin.johnasendorf.com", "localhost", "127.0.0.1", "192.168.50.200", "192.168.50.201", "192.168.50.202"]
-    CSRF_TRUSTED_ORIGINS = ['https://dorfin.johnasendorf.com']
+    CSRF_TRUSTED_ORIGINS = [
+        'https://dorfin.johnasendorf.com',
+        'http://192.168.50.200:31314',
+        'http://192.168.50.201:31314',
+        'http://192.168.50.202:31314',
+    ]
     SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
-    CSRF_COOKIE_SECURE = True
-    SESSION_COOKIE_SECURE = True
     SERVERNAME = "DorfinMUD"
 
     # Override MSSP hostname so MUD clients (Mudlet) don't try to resolve the pod/node hostname
@@ -102,9 +110,13 @@ data:
             echo "CSRF_COOKIE_SECURE = True" >> "$GAME_DIR/server/conf/settings.py"
             echo "SESSION_COOKIE_SECURE = True" >> "$GAME_DIR/server/conf/settings.py"
         fi
-        # Always refresh ALLOWED_HOSTS from configmap
+        # Always refresh ALLOWED_HOSTS and CSRF settings from configmap
         sed -i '/^ALLOWED_HOSTS/d' "$GAME_DIR/server/conf/settings.py"
+        sed -i '/^CSRF_TRUSTED_ORIGINS/d' "$GAME_DIR/server/conf/settings.py"
+        sed -i '/^CSRF_COOKIE_SECURE/d' "$GAME_DIR/server/conf/settings.py"
+        sed -i '/^SESSION_COOKIE_SECURE/d' "$GAME_DIR/server/conf/settings.py"
         grep '^ALLOWED_HOSTS' /config/game-settings.py >> "$GAME_DIR/server/conf/settings.py"
+        grep -A5 '^CSRF_TRUSTED_ORIGINS' /config/game-settings.py >> "$GAME_DIR/server/conf/settings.py"
     fi
 
     # Copy custom homepage template

@@ -19,7 +19,7 @@ spec:
       labels:
         app: evennia
       annotations:
-        deployment.dorfin.io/commit: "1fe9ce3ba2ad0da45afdb0627c4ef4e0cecc5834"
+        deployment.dorfin.io/commit: "f9cb509adb11172f2cb4a9388fa5016b2b2cc712"
     spec:
       initContainers:
         - name: git-sync
@@ -39,15 +39,39 @@ spec:
                 git clone "$REPO_URL" "$SYNC_DIR"
               fi
 
-              # Overlay our custom game files onto the PVC
-              # Only runs if the game/ folder exists in the repo
-              if [ -d "$SYNC_DIR/game" ]; then
-                echo "=== Copying custom game files to PVC ==="
-                cp -a "$SYNC_DIR/game/." "$GAME_DIR/"
-                echo "=== Game code sync complete ==="
-              else
-                echo "=== No game/ folder found in repo, skipping overlay ==="
+              if [ ! -d "$SYNC_DIR/game" ]; then
+                echo "=== No game/ folder found in repo, skipping sync ==="
+                exit 0
               fi
+
+              apk add --no-cache rsync > /dev/null 2>&1
+
+              # Repo-managed directories — only these get --delete treatment.
+              # Everything else on the PVC (server/, db.sqlite3, logs, etc.) is untouched.
+              SYNC_DIRS="commands typeclasses contrib contrib_dorfin world web"
+
+              echo "=== Syncing repo-managed directories ==="
+              for dir in $SYNC_DIRS; do
+                if [ -d "$SYNC_DIR/game/$dir" ]; then
+                  mkdir -p "$GAME_DIR/$dir"
+                  rsync -a --delete "$SYNC_DIR/game/$dir/" "$GAME_DIR/$dir/"
+                  echo "  synced $dir/"
+                else
+                  # Directory removed from repo — clean it from the PVC too
+                  if [ -d "$GAME_DIR/$dir" ]; then
+                    rm -rf "$GAME_DIR/$dir"
+                    echo "  removed $dir/ (no longer in repo)"
+                  fi
+                fi
+              done
+
+              # Copy any top-level files from game/ (e.g. __init__.py) without --delete
+              find "$SYNC_DIR/game" -maxdepth 1 -type f -exec cp -a {} "$GAME_DIR/" \;
+
+              # Purge __pycache__ everywhere under the game dir to prevent stale bytecode
+              find "$GAME_DIR" -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+
+              echo "=== Game code sync complete ==="
           volumeMounts:
             - name: game-data
               mountPath: /usr/src/game

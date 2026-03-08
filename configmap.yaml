@@ -39,7 +39,8 @@ data:
     # DorfinMUD settings for Kubernetes + Cloudflare Tunnel deployment
     # Appended to default settings.py by init container
 
-    WEBSOCKET_CLIENT_URL = "wss://dorfin.johnasendorf.com/ws"
+    # WEBSOCKET_CLIENT_URL = "wss://dorfin.johnasendorf.com/ws"
+    WEBSOCKET_CLIENT_URL = "ws://192.168.50.200:31314/ws"
     ALLOWED_HOSTS = ["dorfin.johnasendorf.com", "localhost", "127.0.0.1", "192.168.50.200", "192.168.50.201", "192.168.50.202"]
     CSRF_TRUSTED_ORIGINS = ['https://dorfin.johnasendorf.com', 'http://192.168.50.200:31314', 'http://192.168.50.201:31314', 'http://192.168.50.202:31314']
     SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')

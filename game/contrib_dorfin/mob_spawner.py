@@ -173,6 +173,9 @@ def ensure_respawn_script(room, mob_name="a mob", respawn_delay=30,
     Add a MobRespawnScript to a room if one isn't already running.
     Updates config if the script already exists.
 
+    If an old-class script exists (from before the dbref-tracking
+    refactor), it is deleted and replaced with a fresh one.
+
     Args:
         room: The home room (where the mob spawns).
         mob_name (str): Name of the mob to spawn.
@@ -186,11 +189,17 @@ def ensure_respawn_script(room, mob_name="a mob", respawn_delay=30,
     existing = room.scripts.get("MobRespawnScript")
     if existing:
         script = existing[0]
-        script.db.mob_name = mob_name
-        script.db.mob_kwargs = mob_kwargs
-        if mob_dbref:
-            script.db.mob_dbref = mob_dbref
-        return script
+        # Check if this is the new class with is_mob_alive
+        if hasattr(script, "is_mob_alive"):
+            script.db.mob_name = mob_name
+            script.db.mob_kwargs = mob_kwargs
+            if mob_dbref:
+                script.db.mob_dbref = mob_dbref
+            return script
+        else:
+            # Old-class script — delete and recreate
+            for s in existing:
+                s.delete()
 
     from evennia import create_script
     script = create_script(

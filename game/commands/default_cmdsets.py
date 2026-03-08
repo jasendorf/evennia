@@ -43,6 +43,8 @@ from commands.command_combat import (
 from commands.command_admin_combat import (
     CmdTrainingRoom, CmdSpawnMob, CmdStopCombat, CmdCombatDebug, CmdFixCombat,
 )
+from commands.command_party import CmdParty, CmdAutoAssist
+from commands.command_group_combat import CmdAssist, CmdRescue
 
 
 class CharacterCmdSet(default_cmds.CharacterCmdSet):
@@ -100,6 +102,14 @@ class CharacterCmdSet(default_cmds.CharacterCmdSet):
         self.add(CmdRest())            # rest / recover
         self.add(CmdLoot())            # loot [item from] [corpse]
         self.add(CmdScore())           # score / stats / sc
+
+        # --- Party (Phase 5) ---
+        self.add(CmdParty())           # party create/invite/accept/leave/etc.
+        self.add(CmdAutoAssist())      # autoassist / aa
+
+        # --- Group Combat (Phase 5) ---
+        self.add(CmdAssist())          # assist <player>
+        self.add(CmdRescue())          # rescue <player>
 
         # --- Admin: Combat (Phase 5) ---
         self.add(CmdTrainingRoom())    # @trainingroom

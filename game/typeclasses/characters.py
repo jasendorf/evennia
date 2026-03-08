@@ -72,6 +72,9 @@ except ImportError:
 # DorfinMUD needs (hunger + thirst)
 from contrib_dorfin.dorfin_needs import DorfinNeedsMixin
 
+# DorfinMUD party (autoassist, combat-aware callbacks)
+from contrib_dorfin.dorfin_party import DorfinPartyMixin
+
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -109,19 +112,21 @@ EQUIPMENT_SLOTS = ["weapon", "offhand", "head", "chest", "legs", "feet", "hands"
 # AwtownCharacter
 # ---------------------------------------------------------------------------
 
-class AwtownCharacter(DorfinNeedsMixin, ClothedCharacter):
+class AwtownCharacter(DorfinPartyMixin, DorfinNeedsMixin, ClothedCharacter):
     """
     The DorfinMUD player character typeclass.
 
     Inherits (MRO order):
+        DorfinPartyMixin  -> PartyCharacterMixin -> (party system)
         DorfinNeedsMixin  -> NeedsCharacterMixin -> (needs system)
         ClothedCharacter  -> DefaultCharacter     -> (clothing + base Evennia)
 
     Properties available after at_object_creation:
-        self.traits     -- TraitHandler    (HP, 10 base stats)
-        self.buffs      -- BuffHandler     (founder buffs, armour mods, need penalties)
-        self.needs      -- NeedsHandler    (hunger, thirst -- via DorfinNeedsMixin)
-        self.cooldowns  -- CooldownHandler (rescue, future ability cooldowns)
+        self.traits         -- TraitHandler    (HP, 10 base stats)
+        self.buffs          -- BuffHandler     (founder buffs, armour mods, need penalties)
+        self.needs          -- NeedsHandler    (hunger, thirst -- via DorfinNeedsMixin)
+        self.cooldowns      -- CooldownHandler (rescue, future ability cooldowns)
+        self.party_handler  -- PartyHandler    (party system -- via DorfinPartyMixin)
 
     Attributes set at creation:
         db.copper            -- int, currency (default 0)
@@ -133,6 +138,8 @@ class AwtownCharacter(DorfinNeedsMixin, ClothedCharacter):
         db.wimpy             -- int, auto-flee threshold (default 0 = disabled)
         db.in_combat         -- bool, currently in combat (managed by CombatHandler)
         db.combat_target     -- dbref, current combat target (managed by CombatHandler)
+        db.autoassist        -- bool, auto-join party combat (default False)
+        db.party_id          -- int, Party script ID if in a party (managed by PartyHandler)
     """
 
     # ------------------------------------------------------------------
@@ -214,7 +221,7 @@ class AwtownCharacter(DorfinNeedsMixin, ClothedCharacter):
             self.db.equipment = {slot: None for slot in EQUIPMENT_SLOTS}
 
     def _init_combat(self):
-        """Initialise combat-related attributes."""
+        """Initialise combat and party-related attributes."""
         if self.db.xp is None:
             self.db.xp = 0
         if self.db.level is None:
@@ -225,6 +232,10 @@ class AwtownCharacter(DorfinNeedsMixin, ClothedCharacter):
             self.db.in_combat = False
         if self.db.combat_target is None:
             self.db.combat_target = None
+        if self.db.autoassist is None:
+            self.db.autoassist = False
+        if self.db.party_id is None:
+            self.db.party_id = None
 
     def _init_flags(self):
         """Initialise one-time flags."""

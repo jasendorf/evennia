@@ -130,13 +130,14 @@ class CmdKill(Command):
 
 def _trigger_party_autoassist(attacker, target, handler):
     """
-    Hook for the party system. Checks if the attacker is in a party
-    and has party members in the room with autoassist enabled.
-
-    Does nothing until the party system is wired in (Chunk 6).
+    Check if the attacker is in a party and trigger autoassist for
+    nearby party members who have it enabled.
     """
-    # Phase 5: no-op. Phase 6 will replace this with real party logic.
-    pass
+    try:
+        from contrib_dorfin.dorfin_party import trigger_party_autoassist
+        trigger_party_autoassist(attacker, target, handler)
+    except ImportError:
+        pass
 
 
 # ---------------------------------------------------------------------------

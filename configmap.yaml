@@ -35,7 +35,7 @@ data:
     # Appended to default settings.py by init container
 
     WEBSOCKET_CLIENT_URL = "wss://dorfin.johnasendorf.com/ws"
-    ALLOWED_HOSTS = ["dorfin.johnasendorf.com", "localhost", "127.0.0.1"]
+    ALLOWED_HOSTS = ["dorfin.johnasendorf.com", "localhost", "127.0.0.1", "192.168.50.200", "192.168.50.201", "192.168.50.202"]
     CSRF_TRUSTED_ORIGINS = ['https://dorfin.johnasendorf.com']
     SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
     CSRF_COOKIE_SECURE = True
@@ -102,6 +102,9 @@ data:
             echo "CSRF_COOKIE_SECURE = True" >> "$GAME_DIR/server/conf/settings.py"
             echo "SESSION_COOKIE_SECURE = True" >> "$GAME_DIR/server/conf/settings.py"
         fi
+        # Always refresh ALLOWED_HOSTS from configmap
+        sed -i '/^ALLOWED_HOSTS/d' "$GAME_DIR/server/conf/settings.py"
+        grep '^ALLOWED_HOSTS' /config/game-settings.py >> "$GAME_DIR/server/conf/settings.py"
     fi
 
     # Copy custom homepage template

@@ -282,10 +282,29 @@ class MobRespawnScript(DefaultScript):
         self.db.death_noticed_at = None
 
     def at_init(self):
-        """Called on every server reload. Fix start_delay on old scripts."""
+        """
+        Called on every server reload. Fix start_delay on old scripts
+        and force-restart the ticker to ensure at_repeat fires.
+        """
         super().at_init()
         if self.start_delay:
             self.start_delay = False
+        # Initialize fields that may not exist on old scripts
+        if self.db.tick_count is None:
+            self.db.tick_count = 0
+        if self.db.last_alive_tick is None:
+            self.db.last_alive_tick = True
+        if self.db.death_noticed_at is None:
+            self.db.death_noticed_at = None
+        # Force restart the ticker — old scripts may have a dead timer
+        # registration from a previous class version. This is safe:
+        # restart() calls stop() then start(), re-registering the ticker
+        # without calling at_script_creation() (so db attrs are preserved).
+        if self.is_active:
+            try:
+                self.restart()
+            except Exception:
+                pass
 
     def at_repeat(self):
         room = self.obj

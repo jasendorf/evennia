@@ -42,6 +42,7 @@ from commands.command_kit import CmdClaimKit, CmdChooseWeapon
 from commands.command_equip import CmdWield, CmdUnwield, CmdEq
 from commands.command_eat import CmdEat, CmdDrink
 from commands.command_fill import CmdFill
+from commands.command_put import CmdPut
 from commands.command_rent import CmdRentRoom
 
 # Phase 5 commands
@@ -73,6 +74,9 @@ class CharacterCmdSet(default_cmds.CharacterCmdSet):
         # Containers contrib cmdset (put, get from, look in)
         if _HAS_CONTAINERS:
             self.add(ContainerCmdSet)
+
+        # Override contrib's put with our duplicate-name-friendly version
+        self.add(CmdPut())
 
         # --- Gates ---
         self.add(CmdOpenGate())

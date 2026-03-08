@@ -86,18 +86,28 @@ except ImportError:
     _BUFFS_AVAILABLE = False
 
 
+# Ground decay -- items left on the ground vanish over time
+from contrib_dorfin.ground_decay import GroundDecayMixin
+
+
 # ---------------------------------------------------------------------------
 # AwtownItem -- base
 # ---------------------------------------------------------------------------
 
-class AwtownItem(DefaultObject):
+class AwtownItem(GroundDecayMixin, DefaultObject):
     """
     Base typeclass for all DorfinMUD items.
 
+    Includes GroundDecayMixin: items left on the ground will vanish
+    after a time based on their item_level (db.item_level or db.level).
+    Set db.no_decay = True for quest items / permanent objects.
+
     Attributes:
-        db.desc   (str) -- description shown when examined
-        db.value  (int) -- base value in copper coins
-        db.weight (int) -- weight in arbitrary units
+        db.desc        (str) -- description shown when examined
+        db.value       (int) -- base value in copper coins
+        db.weight      (int) -- weight in arbitrary units
+        db.item_level  (int) -- governs decay time (default 1 = 2 min)
+        db.no_decay    (bool) -- if True, never decays on the ground
     """
 
     def at_object_creation(self):

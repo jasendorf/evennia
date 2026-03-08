@@ -2,7 +2,7 @@
 DorfinMUD Needs Extension
 =========================
 
-Extends the generic needs system (contrib_dorfin/needs.py) with DorfinMUD-
+Extends the generic needs system (contrib/needs/needs.py) with DorfinMUD-
 specific hunger and thirst mechanics.
 
 This is the game-specific layer. The contrib layer (needs.py) contains
@@ -66,7 +66,7 @@ via the _on_*_restored callbacks.
 
 """
 
-from contrib_dorfin.needs import NeedsCharacterMixin, BaseNeedsBuff
+from contrib.needs.needs import NeedsCharacterMixin, BaseNeedsBuff
 
 try:
     from evennia.contrib.rpg.buffs import Mod

@@ -41,7 +41,7 @@ INSTALLATION
 2. Have your Character typeclass inherit from NeedsCharacterMixin:
 
     from evennia.utils import lazy_property
-    from contrib_dorfin.needs import NeedsCharacterMixin
+    from contrib.needs.needs import NeedsCharacterMixin
 
     class Character(NeedsCharacterMixin, DefaultCharacter):
         pass
@@ -505,7 +505,7 @@ class NeedsCharacterMixin:
 
     Usage:
 
-        from contrib_dorfin.needs import NeedsCharacterMixin
+        from contrib.needs.needs import NeedsCharacterMixin
         from evennia.utils import lazy_property
 
         class Character(NeedsCharacterMixin, DefaultCharacter):

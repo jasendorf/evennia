@@ -94,6 +94,7 @@ class Corpse(DefaultObject):
         # Lock: anyone can get items from the corpse, but not pick up
         # the corpse itself
         self.locks.add("get:false()")
+        self.locks.add("get_from:true()")
 
         # Start the decay timer
         self.scripts.add(CorpseDecayScript)

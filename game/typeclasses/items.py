@@ -2,12 +2,16 @@
 DorfinMUD Item Typeclasses
 ==========================
 
-Four item types used throughout Awtown and beyond.
+Six item types used throughout Awtown and beyond.
 
     AwtownItem        -- Base item. All DorfinMUD objects inherit from this.
     AwtownClothing    -- Wearable item. Extends ContribClothing with stat mods.
     AwtownWeapon      -- Wieldable weapon. Goes into equipment slots.
-    AwtownConsumable  -- Food or drink. Restores hunger/thirst/HP when eaten.
+    AwtownConsumable  -- Food or single-use drink. Deleted after consumption.
+    AwtownDrinkable   -- Multi-sip drink container (waterskin, flask). Not
+                         deleted — tracks remaining sips, can be refilled.
+    AwtownContainer   -- Container that holds other items (belt pouch, chest).
+                         Uses ContribContainer for put/get commands.
 
 ---
 
@@ -271,6 +275,202 @@ class AwtownConsumable(AwtownItem):
             details.append(f"Health: +{self.db.hp_restore}")
         if details:
             lines.append("|c" + "  ".join(details) + "|n")
+        lines.append(f"|yValue: {value} copper|n")
+        return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# AwtownDrinkable -- multi-sip drink container
+# ---------------------------------------------------------------------------
+
+class AwtownDrinkable(AwtownItem):
+    """
+    A drink container with multiple sips (waterskin, flask, bottle).
+
+    Unlike AwtownConsumable, this item is NOT destroyed after one use.
+    Each drink reduces db.sips by 1. When sips reach 0, the item is
+    empty and must be refilled (at a well, inn, etc.) or discarded.
+
+    Consumed by CmdDrink (command_eat.py) which checks for this
+    typeclass before checking AwtownConsumable.
+
+    Attributes:
+        db.sips           (int) -- remaining sips (default 5)
+        db.sips_max       (int) -- maximum sips when full (default 5)
+        db.hydration_per  (int) -- thirst restored per sip (default 10)
+        db.hp_per         (int) -- HP restored per sip (default 0)
+        db.desc           (str) -- description
+        db.value          (int) -- copper value
+
+    Creating:
+        waterskin = create_object("typeclasses.items.AwtownDrinkable",
+                                  key="Waterskin", location=character)
+        waterskin.db.sips = 5
+        waterskin.db.sips_max = 5
+        waterskin.db.hydration_per = 10
+    """
+
+    def at_object_creation(self):
+        super().at_object_creation()
+        if self.db.sips is None:
+            self.db.sips = 5
+        if self.db.sips_max is None:
+            self.db.sips_max = 5
+        if self.db.hydration_per is None:
+            self.db.hydration_per = 10
+        if self.db.hp_per is None:
+            self.db.hp_per = 0
+
+    def drink_sip(self, drinker):
+        """
+        Consume one sip. Apply hydration and HP to the drinker.
+
+        Args:
+            drinker: The character drinking.
+
+        Returns:
+            tuple: (success: bool, message: str)
+        """
+        sips = self.db.sips or 0
+        if sips <= 0:
+            return False, f"{self.key} is empty."
+
+        self.db.sips = sips - 1
+        remaining = self.db.sips
+
+        # Apply effects
+        hydration = self.db.hydration_per or 0
+        hp = self.db.hp_per or 0
+
+        if hydration and hasattr(drinker, "restore_thirst"):
+            new_thirst = drinker.restore_thirst(hydration)
+            if new_thirst is not None and new_thirst > 75:
+                drinker.msg("|gYou feel refreshed.|n")
+
+        if hp and hasattr(drinker, "heal"):
+            drinker.heal(hp)
+            drinker.msg(f"|gYou recover {hp} health.|n")
+
+        # Status message
+        if remaining <= 0:
+            status = f"|y{self.key} is now empty.|n"
+        elif remaining == 1:
+            status = f"|y{self.key} has one sip left.|n"
+        else:
+            status = f"{self.key} has {remaining} sips remaining."
+
+        return True, status
+
+    def refill(self, amount=None):
+        """
+        Refill the container.
+
+        Args:
+            amount (int): Sips to add. Defaults to full.
+
+        Returns:
+            int: New sip count.
+        """
+        if amount is None:
+            self.db.sips = self.db.sips_max
+        else:
+            self.db.sips = min(self.db.sips_max, (self.db.sips or 0) + amount)
+        return self.db.sips
+
+    def return_appearance(self, looker, **kwargs):
+        desc = self.db.desc or "A drink container."
+        value = self.db.value or 0
+        sips = self.db.sips or 0
+        sips_max = self.db.sips_max or 5
+
+        if sips <= 0:
+            fill = "|rempty|n"
+        elif sips >= sips_max:
+            fill = "|gfull|n"
+        else:
+            fill = f"|y{sips}/{sips_max} sips|n"
+
+        lines = [f"|w{self.key}|n", desc, f"  Status: {fill}"]
+        if self.db.hydration_per:
+            lines.append(f"  |cThirst per sip: +{self.db.hydration_per}|n")
+        lines.append(f"|yValue: {value} copper|n")
+        return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# AwtownContainer -- items that hold other items
+# ---------------------------------------------------------------------------
+
+try:
+    from evennia.contrib.game_systems.containers.containers import ContribContainer
+    _CONTAINERS_AVAILABLE = True
+except ImportError:
+    ContribContainer = DefaultObject
+    _CONTAINERS_AVAILABLE = False
+
+
+class AwtownContainer(ContribContainer if _CONTAINERS_AVAILABLE else AwtownItem):
+    """
+    A container item that can hold other items inside it.
+
+    Uses the ContribContainer from evennia.contrib.game_systems.containers
+    which provides 'put X in Y' and 'get X from Y' commands.
+
+    Attributes:
+        db.capacity   (int) -- maximum number of items (default 10)
+        db.desc       (str) -- description
+        db.value      (int) -- copper value
+
+    Creating:
+        pouch = create_object("typeclasses.items.AwtownContainer",
+                              key="Belt Pouch", location=character)
+        pouch.db.capacity = 10
+        pouch.db.desc = "A small leather pouch."
+
+    Players can then:
+        put coin in pouch
+        get coin from pouch
+        look in pouch
+    """
+
+    def at_object_creation(self):
+        super().at_object_creation()
+        if self.db.value is None:
+            self.db.value = 0
+        if self.db.weight is None:
+            self.db.weight = 1
+        if self.db.capacity is None:
+            self.db.capacity = 10
+
+    def at_pre_put_in(self, putter, obj_to_put, **kwargs):
+        """
+        Called before an object is put into this container.
+        Checks capacity.
+        """
+        capacity = self.db.capacity or 10
+        current = len([o for o in self.contents if o != self])
+        if current >= capacity:
+            putter.msg(f"{self.key} is full.")
+            return False
+        return True
+
+    def get_display_name(self, looker, **kwargs):
+        return f"|w{self.key}|n"
+
+    def return_appearance(self, looker, **kwargs):
+        desc = self.db.desc or "A container."
+        value = self.db.value or 0
+        lines = [f"|w{self.key}|n", desc]
+
+        contents = [obj for obj in self.contents if obj != self]
+        if contents:
+            lines.append("\n|wContains:|n")
+            for obj in contents:
+                name = obj.get_display_name(looker) if hasattr(obj, "get_display_name") else obj.key
+                lines.append(f"  {name}")
+        else:
+            lines.append("\n|xEmpty.|n")
+
         lines.append(f"|yValue: {value} copper|n")
         return "\n".join(lines)
 

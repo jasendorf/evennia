@@ -23,17 +23,25 @@ try:
 except ImportError:
     _HAS_CLOTHING = False
 
+# Containers contrib -- adds: put, overrides get/look to support containers
+try:
+    from evennia.contrib.game_systems.containers import ContainerCmdSet
+    _HAS_CONTAINERS = True
+except ImportError:
+    _HAS_CONTAINERS = False
+
 # Phase 3 commands
 from commands.command_test import CmdTest
 from commands.command_gates import CmdOpenGate, CmdCloseGate
 from commands.command_say import CmdDorfinSay, CmdAsk
 from commands.command_shop import CmdList, CmdBuy, CmdSell
 from commands.command_founder import CmdBuff, CmdBuffs
-from commands.command_kit import CmdClaimKit
+from commands.command_kit import CmdClaimKit, CmdChooseWeapon
 
 # Phase 4 commands
 from commands.command_equip import CmdWield, CmdUnwield, CmdEq
 from commands.command_eat import CmdEat, CmdDrink
+from commands.command_fill import CmdFill
 from commands.command_rent import CmdRentRoom
 
 # Phase 5 commands
@@ -62,6 +70,10 @@ class CharacterCmdSet(default_cmds.CharacterCmdSet):
         if _HAS_CLOTHING:
             self.add(ClothedCharacterCmdSet)
 
+        # Containers contrib cmdset (put, get from, look in)
+        if _HAS_CONTAINERS:
+            self.add(ContainerCmdSet)
+
         # --- Gates ---
         self.add(CmdOpenGate())
         self.add(CmdCloseGate())
@@ -81,6 +93,7 @@ class CharacterCmdSet(default_cmds.CharacterCmdSet):
 
         # --- Starter kit ---
         self.add(CmdClaimKit())        # claim (at Outfitter's Rest)
+        self.add(CmdChooseWeapon())    # choose weapon (at Outfitter's Rest)
 
         # --- Equipment ---
         self.add(CmdWield())           # wield <weapon>
@@ -90,6 +103,7 @@ class CharacterCmdSet(default_cmds.CharacterCmdSet):
         # --- Eat & Drink ---
         self.add(CmdEat())             # eat <food>
         self.add(CmdDrink())           # drink <item>
+        self.add(CmdFill())            # fill / refill <container>
 
         # --- Rest ---
         self.add(CmdRentRoom())        # rent room (at Inn Counter)

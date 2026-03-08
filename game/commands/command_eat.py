@@ -106,6 +106,10 @@ class CmdDrink(Command):
     Drinking restores your thirst and may restore some health.
     You must be carrying the item.
 
+    Multi-sip containers (like waterskins) are NOT destroyed after
+    drinking — they track remaining sips. Single-use drinks (potions,
+    etc.) are consumed and deleted.
+
     Examples:
         drink waterskin
         drink healing draught
@@ -137,6 +141,21 @@ class CmdDrink(Command):
                     return
             item = item[0]
 
+        # Check for multi-sip drinkable first (waterskin, flask, etc.)
+        from typeclasses.items import AwtownDrinkable
+        if isinstance(item, AwtownDrinkable):
+            success, msg = item.drink_sip(caller)
+            if success:
+                caller.msg(f"You take a drink from {item.key}. {msg}")
+                caller.location.msg_contents(
+                    f"|w{caller.name}|n takes a drink from {item.key}.",
+                    exclude=caller,
+                )
+            else:
+                caller.msg(msg)
+            return
+
+        # Fall back to single-use consumable
         from typeclasses.items import AwtownConsumable
         if not isinstance(item, AwtownConsumable):
             caller.msg(f"You can't drink {item.key}.")
@@ -166,7 +185,7 @@ class CmdDrink(Command):
         caller.msg(f"You drink {item.key}.")
         caller.location.msg_contents(
             f"|w{caller.name}|n drinks {item.key}.",
-            exclude=caller
+            exclude=caller,
         )
 
         item.delete()

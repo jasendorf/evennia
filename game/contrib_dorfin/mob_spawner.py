@@ -273,10 +273,16 @@ class MobRespawnScript(DefaultScript):
         self.desc = "Tracks and respawns a mob at its home room."
         self.interval = 30
         self.persistent = True
-        self.start_delay = True
+        self.start_delay = False   # must be False — True resets on every reload
         self.db.mob_name = "a mob"
         self.db.mob_dbref = None
         self.db.mob_kwargs = {}
+
+    def at_init(self):
+        """Called on every server reload. Fix start_delay on old scripts."""
+        super().at_init()
+        if self.start_delay:
+            self.start_delay = False
 
     def at_repeat(self):
         room = self.obj

@@ -1,8 +1,8 @@
 """
-Container interaction commands: get and put
-===========================================
+Container interaction commands: get, put, and drop
+===================================================
 
-Overrides the default get and the containers contrib's put with
+Overrides the default get/drop and the containers contrib's put with
 versions that handle duplicate item names and an 'all' modifier.
 
 GET syntax:
@@ -16,11 +16,16 @@ PUT syntax:
     put all in <container>            -- put everything in container
     put all <item> in <container>     -- put all matching items in container
 
+DROP syntax:
+    drop <item>                       -- drop one item into the room
+    drop all                          -- drop everything you carry
+    drop all <item>                   -- drop all matching items
+
 Aliases:
     get = take
     put = place, store
 
-When multiple items share the same name (e.g. three Torches), both
+When multiple items share the same name (e.g. three Torches), all
 commands auto-pick the first match instead of asking "which one?"
 
 Depends on:
@@ -476,5 +481,90 @@ class CmdPut(Command):
         caller.msg(f"|gYou put {item.key} in {container.key}.|n")
         caller.location.msg_contents(
             f"|w{caller.name}|n puts {item.key} in {container.key}.",
+            exclude=caller,
+        )
+
+
+# ---------------------------------------------------------------------------
+# CmdDrop
+# ---------------------------------------------------------------------------
+
+class CmdDrop(Command):
+    """
+    Drop items from your inventory into the room.
+
+    Usage:
+        drop <item>             -- drop one item
+        drop all                -- drop everything you carry
+        drop all <item>         -- drop all matching items
+
+    Examples:
+        drop sword
+        drop all
+        drop all torch
+    """
+
+    key = "drop"
+    locks = "cmd:all()"
+    help_category = "General"
+
+    def func(self):
+        caller = self.caller
+        args = self.args.strip()
+
+        if not args:
+            caller.msg("Drop what?")
+            return
+
+        # Get droppable inventory (exclude worn items)
+        inventory = [
+            obj for obj in caller.contents
+            if not getattr(obj.db, "worn", None)
+        ]
+
+        # "drop all"
+        if args.lower() == "all":
+            if not inventory:
+                caller.msg("You aren't carrying anything to drop.")
+                return
+            count = 0
+            for item in list(inventory):
+                item.move_to(caller.location, quiet=True)
+                count += 1
+            caller.msg(f"|gYou drop {count} item(s).|n")
+            caller.location.msg_contents(
+                f"|w{caller.name}|n drops some items.",
+                exclude=caller,
+            )
+            return
+
+        # "drop all <item>"
+        if args.lower().startswith("all "):
+            item_query = args[4:].strip()
+            matches = _find_all(item_query, inventory)
+            if not matches:
+                caller.msg(f"You aren't carrying any '{item_query}'.")
+                return
+            for item in matches:
+                item.move_to(caller.location, quiet=True)
+            caller.msg(
+                f"|gYou drop {len(matches)} {item_query}(s).|n"
+            )
+            caller.location.msg_contents(
+                f"|w{caller.name}|n drops some items.",
+                exclude=caller,
+            )
+            return
+
+        # Single item
+        item = _find_one(caller, args, inventory)
+        if not item:
+            caller.msg(f"You aren't carrying '{args}'.")
+            return
+
+        item.move_to(caller.location, quiet=True)
+        caller.msg(f"|gYou drop {item.key}.|n")
+        caller.location.msg_contents(
+            f"|w{caller.name}|n drops {item.key}.",
             exclude=caller,
         )

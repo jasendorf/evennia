@@ -271,7 +271,11 @@ class GroundDecayMixin:
         """Called on server reload — re-check ground state."""
         super().at_init()
         _ensure_ticker()
-        self._check_ground_state()
+        # Defer ground-state check to the next event-loop tick.
+        # at_init fires during idmapper hydration when DB writes
+        # are not yet safe (object is on database "None").
+        from evennia.utils import delay
+        delay(0, self._check_ground_state)
 
     def at_post_move(self, source_location, move_type="move", **kwargs):
         """Called by Evennia's move_to() after the item arrives."""

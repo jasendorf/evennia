@@ -81,7 +81,7 @@ class GroundDecayScript(DefaultScript):
         self.key = "GroundDecayScript"
         self.desc = "Removes an item from the ground after a delay."
         self.persistent = True
-        self.interval = 0  # set dynamically — one-shot via repeats=1
+        self.interval = MIN_DECAY   # real default — overridden by _start_decay
         self.repeats = 1
         self.start_delay = True
         self.db.warned = False
@@ -110,8 +110,6 @@ class GroundDecayScript(DefaultScript):
                 f"|x{item_name} crumbles to dust and vanishes.|n"
             )
 
-        self.delete()
-
 
 class GroundDecayWarningScript(DefaultScript):
     """
@@ -122,7 +120,7 @@ class GroundDecayWarningScript(DefaultScript):
         self.key = "GroundDecayWarningScript"
         self.desc = "Warns that an item is about to vanish."
         self.persistent = False
-        self.interval = 0
+        self.interval = MIN_DECAY   # real default — overridden by _start_decay
         self.repeats = 1
         self.start_delay = True
 
@@ -164,10 +162,18 @@ class GroundDecayMixin:
         if getattr(self.db, "no_decay", False):
             return
         if _is_on_ground(self):
-            # Only start if no decay script already running
             existing = self.scripts.get("GroundDecayScript")
-            if not existing:
+            if existing:
+                # Restart to fix potentially dead tickers from old code
+                for s in existing:
+                    if s.interval <= 0:
+                        s.interval = get_decay_time(self)
+                    s.restart()
+            else:
                 _start_decay(self)
+        else:
+            # Not on ground — cancel any stale scripts
+            _cancel_decay(self)
 
     def at_after_move(self, source_location, **kwargs):
         """Called after the item is moved to a new location."""
@@ -176,7 +182,15 @@ class GroundDecayMixin:
         if getattr(self.db, "no_decay", False):
             return
 
-        if _is_on_ground(self):
+        from evennia.utils.logger import log_info
+        on_ground = _is_on_ground(self)
+        log_info(
+            f"GroundDecay.at_after_move: {self.key} ({self.dbref}) "
+            f"src={source_location} dest={self.location} "
+            f"on_ground={on_ground}"
+        )
+
+        if on_ground:
             _start_decay(self)
         else:
             _cancel_decay(self)
@@ -218,16 +232,18 @@ def _start_decay(item):
 
     from evennia import create_script
 
-    # Main decay script
+    # Main decay script — create, set interval, then restart to
+    # ensure the Twisted ticker registers with the correct interval.
     script = create_script(
         GroundDecayScript,
         key="GroundDecayScript",
         obj=item,
         persistent=True,
-        autostart=False,
+        autostart=True,
     )
-    script.interval = decay_time
-    script.start()
+    if script.interval != decay_time:
+        script.interval = decay_time
+        script.restart()
 
     # Warning script (fires WARN_THRESHOLD seconds before decay)
     if decay_time > WARN_THRESHOLD * 2:
@@ -237,10 +253,11 @@ def _start_decay(item):
             key="GroundDecayWarningScript",
             obj=item,
             persistent=False,
-            autostart=False,
+            autostart=True,
         )
-        warn_script.interval = warn_time
-        warn_script.start()
+        if warn_script.interval != warn_time:
+            warn_script.interval = warn_time
+            warn_script.restart()
 
 
 def _cancel_decay(item):

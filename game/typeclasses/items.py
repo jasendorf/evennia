@@ -87,7 +87,7 @@ except ImportError:
 
 
 # Ground decay -- items left on the ground vanish over time
-from contrib_dorfin.ground_decay import GroundDecayMixin
+from contrib.ground_decay.ground_decay import GroundDecayMixin
 
 
 # ---------------------------------------------------------------------------
@@ -130,7 +130,7 @@ class AwtownItem(GroundDecayMixin, DefaultObject):
 # AwtownClothing -- wearable with optional stat mods
 # ---------------------------------------------------------------------------
 
-class AwtownClothing(ContribClothing):
+class AwtownClothing(GroundDecayMixin, ContribClothing):
     """
     Wearable clothing or armour.
 
@@ -419,7 +419,7 @@ except ImportError:
     _CONTAINERS_AVAILABLE = False
 
 
-class AwtownContainer(ContribContainer if _CONTAINERS_AVAILABLE else AwtownItem):
+class AwtownContainer(GroundDecayMixin, ContribContainer if _CONTAINERS_AVAILABLE else DefaultObject):
     """
     A container item that can hold other items inside it.
 

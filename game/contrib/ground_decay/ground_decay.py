@@ -343,16 +343,16 @@ def _ensure_ticker():
 
     existing = search_script("GroundDecayTicker")
     if existing:
-        existing[0].restart()
+        existing[0].stop()
+        existing[0].start()
     else:
         from evennia import create_script
-        script = create_script(
+        create_script(
             GroundDecayTicker,
             key="GroundDecayTicker",
             persistent=True,
             autostart=True,
         )
-        script.restart()
 
     _ticker_checked = True
 

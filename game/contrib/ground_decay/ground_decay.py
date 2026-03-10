@@ -296,6 +296,7 @@ class GroundDecayMixin:
         Idempotent check: tag and timestamp the item if it's on the
         ground, or clear that state if it's not.
         """
+        _ensure_ticker()
         if getattr(self.db, "no_decay", False):
             _clear_ground_state(self)
             return

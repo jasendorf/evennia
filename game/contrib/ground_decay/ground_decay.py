@@ -327,9 +327,12 @@ def _clear_ground_state(item):
 
 def _ensure_ticker():
     """
-    Ensure the global GroundDecayTicker script exists. Uses a
-    module-level flag so only one DB check happens per server process.
-    The flag is set only after success so failures can be retried.
+    Ensure the global GroundDecayTicker script exists and is registered
+    with Twisted's reactor. Runs once per server process.
+
+    Always calls .restart() to guarantee the ticker is live — scripts
+    created during deferred at_init may exist in the DB without being
+    registered with the Twisted TickerHandler.
     """
     global _ticker_checked
     if _ticker_checked:
@@ -337,14 +340,18 @@ def _ensure_ticker():
 
     from evennia.utils.search import search_script
 
-    if not search_script("GroundDecayTicker"):
+    existing = search_script("GroundDecayTicker")
+    if existing:
+        existing[0].restart()
+    else:
         from evennia import create_script
-        create_script(
+        script = create_script(
             GroundDecayTicker,
             key="GroundDecayTicker",
             persistent=True,
             autostart=True,
         )
+        script.restart()
 
     _ticker_checked = True
 

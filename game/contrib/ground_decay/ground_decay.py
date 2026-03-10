@@ -270,12 +270,16 @@ class GroundDecayMixin:
     def at_init(self):
         """Called on server reload — re-check ground state."""
         super().at_init()
-        _ensure_ticker()
-        # Defer ground-state check to the next event-loop tick.
+        # Defer all DB operations to the next event-loop tick.
         # at_init fires during idmapper hydration when DB writes
         # are not yet safe (object is on database "None").
         from evennia.utils import delay
-        delay(0, self._check_ground_state)
+        delay(0, self._deferred_init)
+
+    def _deferred_init(self):
+        """Run after hydration is complete."""
+        _ensure_ticker()
+        self._check_ground_state()
 
     def at_post_move(self, source_location, move_type="move", **kwargs):
         """Called by Evennia's move_to() after the item arrives."""
@@ -325,11 +329,11 @@ def _ensure_ticker():
     """
     Ensure the global GroundDecayTicker script exists. Uses a
     module-level flag so only one DB check happens per server process.
+    The flag is set only after success so failures can be retried.
     """
     global _ticker_checked
     if _ticker_checked:
         return
-    _ticker_checked = True
 
     from evennia.utils.search import search_script
 
@@ -341,6 +345,8 @@ def _ensure_ticker():
             persistent=True,
             autostart=True,
         )
+
+    _ticker_checked = True
 
 
 def _migrate_old_scripts():

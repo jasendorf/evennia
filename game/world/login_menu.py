@@ -7,6 +7,12 @@ Post-login character selection screen. Launched from
 
 Unlike the chargen menu (where caller = session), here the
 caller is the **Account** object.
+
+Important: side-effects like puppeting or launching the chargen EvMenu
+must NOT happen inside goto callbacks (the login EvMenu is still active).
+Instead, store the intended action on ``account.ndb._login_action`` and
+return ``None`` — the ``on_login_menu_exit`` callback runs after the
+EvMenu is fully torn down and executes the deferred action.
 """
 
 import string
@@ -24,6 +30,52 @@ try:
     _CHARGEN_MENU = settings.CHARGEN_MENU
 except AttributeError:
     _CHARGEN_MENU = "world.chargen"
+
+
+def on_login_menu_exit(caller, menu):
+    """
+    Called after the login EvMenu is fully closed.
+
+    Checks ``caller.ndb._login_action`` for a deferred action
+    (puppet a character or launch chargen) and executes it.
+    """
+    account = caller
+    action = account.ndb._login_action
+    if not action:
+        return
+    account.ndb._login_action = None
+
+    sess = action["session"]
+    if not sess:
+        return
+
+    if action["type"] == "puppet":
+        account.puppet_object(sess, action["character"])
+
+    elif action["type"] == "chargen":
+        new_char = action["character"]
+        startnode = action["startnode"]
+        sess.new_char = new_char
+
+        def _finish_chargen(sess_obj, menu):
+            char = sess_obj.new_char
+            if char.db.chargen_step:
+                account.msg(
+                    account.at_look(target=account.characters.all(), session=sess_obj),
+                    session=sess_obj,
+                )
+            else:
+                try:
+                    account.puppet_object(sess_obj, char)
+                except RuntimeError:
+                    account.msg("Could not enter the game.", session=sess_obj)
+
+        EvMenu(
+            sess,
+            _CHARGEN_MENU,
+            startnode=startnode,
+            cmd_on_exit=_finish_chargen,
+        )
 
 
 def menunode_charselect(caller, raw_string="", **kwargs):
@@ -183,10 +235,13 @@ def _do_play(account, arg, characters, session):
             "error": "That character is still in progress. Type |wcreate|n to continue.",
         }
 
-    # Puppet the character
+    # Defer puppeting until the login EvMenu is fully closed
     sess = session or (account.sessions.get()[0] if account.sessions.get() else None)
-    if sess:
-        account.puppet_object(sess, target)
+    account.ndb._login_action = {
+        "type": "puppet",
+        "session": sess,
+        "character": target,
+    }
     return None
 
 
@@ -229,30 +284,14 @@ def _do_create(account, characters, session):
         except Exception:
             pass
 
+    # Defer chargen launch until the login EvMenu is fully closed
     startnode = new_char.db.chargen_step
-    sess.new_char = new_char
-
-    def finish_char_callback(sess_obj, menu):
-        char = sess_obj.new_char
-        if char.db.chargen_step:
-            # Exited early — show the OOC account look
-            account.msg(
-                account.at_look(target=account.characters.all(), session=sess_obj),
-                session=sess_obj,
-            )
-        else:
-            # Chargen complete — puppet the character
-            try:
-                account.puppet_object(sess_obj, char)
-            except RuntimeError:
-                account.msg("Could not enter the game.", session=sess_obj)
-
-    EvMenu(
-        sess,
-        _CHARGEN_MENU,
-        startnode=startnode,
-        cmd_on_exit=finish_char_callback,
-    )
+    account.ndb._login_action = {
+        "type": "chargen",
+        "session": sess,
+        "character": new_char,
+        "startnode": startnode,
+    }
     return None
 
 

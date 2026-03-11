@@ -68,11 +68,13 @@ class Account(_BASE_ACCOUNT):
                 self.db._playable_characters = current
 
         # Launch the login menu
+        from world.login_menu import on_login_menu_exit
+
         EvMenu(
             self,
             "world.login_menu",
             startnode="menunode_charselect",
             session=session,
-            cmd_on_exit=None,
+            cmd_on_exit=on_login_menu_exit,
             persistent=True,
         )

@@ -69,6 +69,12 @@ data:
     }
     CLOTHING_OVERALL_LIMIT = 20
 
+    # Character creation (character_creator contrib)
+    AUTO_CREATE_CHARACTER_WITH_ACCOUNT = False
+    AUTO_PUPPET_ON_LOGIN = False
+    MAX_NR_CHARACTERS = 6
+    CHARGEN_MENU = "world.chargen"
+
   main-content.html: |
     <h1 class="card-title">Welcome to DorfinMUD!</h1>
     <hr/>
@@ -116,6 +122,16 @@ data:
         sed -i '/^\]$/d' "$GAME_DIR/server/conf/settings.py"
         grep '^ALLOWED_HOSTS' /config/game-settings.py >> "$GAME_DIR/server/conf/settings.py"
         grep '^CSRF_TRUSTED_ORIGINS' /config/game-settings.py >> "$GAME_DIR/server/conf/settings.py"
+    fi
+
+    # Ensure chargen settings are present
+    if ! grep -q "AUTO_PUPPET_ON_LOGIN" "$GAME_DIR/server/conf/settings.py"; then
+        echo "" >> "$GAME_DIR/server/conf/settings.py"
+        echo "# Character creation (character_creator contrib)" >> "$GAME_DIR/server/conf/settings.py"
+        echo "AUTO_CREATE_CHARACTER_WITH_ACCOUNT = False" >> "$GAME_DIR/server/conf/settings.py"
+        echo "AUTO_PUPPET_ON_LOGIN = False" >> "$GAME_DIR/server/conf/settings.py"
+        echo "MAX_NR_CHARACTERS = 6" >> "$GAME_DIR/server/conf/settings.py"
+        echo 'CHARGEN_MENU = "world.chargen"' >> "$GAME_DIR/server/conf/settings.py"
     fi
 
     # Copy custom homepage template

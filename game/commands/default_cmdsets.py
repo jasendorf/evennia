@@ -56,6 +56,16 @@ from commands.command_admin_combat import (
 from commands.command_party import CmdParty, CmdAutoAssist
 from commands.command_group_combat import CmdAssist, CmdRescue
 
+# Phase 6 commands — character creation
+from commands.command_chargen import CmdChargen
+
+# Character creator contrib
+try:
+    from evennia.contrib.rpg.character_creator.character_creator import ContribChargenCmdSet
+    _HAS_CHARGEN = True
+except ImportError:
+    _HAS_CHARGEN = False
+
 
 class CharacterCmdSet(default_cmds.CharacterCmdSet):
     """
@@ -140,6 +150,9 @@ class CharacterCmdSet(default_cmds.CharacterCmdSet):
         self.add(CmdCombatDebug())     # @combatdebug / @cdebug
         self.add(CmdFixCombat())       # @fixcombat (global cleanup)
 
+        # --- Character Creation (admin) ---
+        self.add(CmdChargen())           # @chargen [character]
+
         # --- Testing ---
         self.add(CmdTest())
 
@@ -154,6 +167,8 @@ class AccountCmdSet(default_cmds.AccountCmdSet):
 
     def at_cmdset_creation(self):
         super().at_cmdset_creation()
+        if _HAS_CHARGEN:
+            self.add(ContribChargenCmdSet)
 
 
 class UnloggedinCmdSet(default_cmds.UnloggedinCmdSet):

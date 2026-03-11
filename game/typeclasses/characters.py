@@ -243,6 +243,8 @@ class AwtownCharacter(DorfinPartyMixin, DorfinNeedsMixin, ClothedCharacter):
             self.db.kit_claimed = False
         if not self.db.founder_cooldowns:
             self.db.founder_cooldowns = {}
+        if self.db.languages is None:
+            self.db.languages = {"common": 1.0}
 
     # ------------------------------------------------------------------
     # Reload / puppet hooks

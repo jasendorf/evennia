@@ -274,10 +274,18 @@ class MobMovementScript(DefaultScript):
             return None
 
 
+CHASE_MOVE_DELAY = 3    # seconds before mob follows through the exit
+CHASE_ENGAGE_DELAY = 2  # seconds after arriving before re-engaging combat
+
+
 def trigger_chase(mob, target, exit_used):
     """
     Called when a player flees combat. If the mob has chase enabled,
-    it follows through the same exit.
+    it follows through the same exit after a short delay.
+
+    The mob announces it's about to give chase, then follows after
+    CHASE_MOVE_DELAY seconds. After arriving, it waits another
+    CHASE_ENGAGE_DELAY seconds before re-engaging combat.
 
     Args:
         mob: The AwtownMob that might chase.
@@ -325,29 +333,120 @@ def trigger_chase(mob, target, exit_used):
     if not script.db.home_room:
         script.db.home_room = mob.location.dbref if mob.location else None
 
-    # Follow through the exit
+    # Announce the chase is starting (mob hasn't moved yet)
+    room = mob.location
+    if room:
+        room.msg_contents(
+            f"|r{mob.key} snarls and prepares to give chase!|n"
+        )
+
+    # Store dbrefs for the delayed callbacks (objects may move/die)
+    mob_dbref = mob.dbref
+    target_dbref = target.dbref
+    dest_dbref = destination.dbref
+
+    # After a delay, the mob follows
+    from evennia.utils import delay
+    delay(CHASE_MOVE_DELAY, _chase_move, mob_dbref, target_dbref,
+          dest_dbref, persistent=False)
+
+
+def _chase_move(mob_dbref, target_dbref, dest_dbref):
+    """
+    Delayed callback: move the mob through to the destination room.
+    Called CHASE_MOVE_DELAY seconds after the player fled.
+    """
+    from evennia import search_object
+
+    mob_results = search_object(mob_dbref)
+    if not mob_results:
+        return
+    mob = mob_results[0]
+
+    # Mob may have died or entered combat in the meantime
+    if hasattr(mob, "is_alive") and not mob.is_alive():
+        return
+    if getattr(mob.db, "in_combat", False):
+        return
+
+    dest_results = search_object(dest_dbref)
+    if not dest_results:
+        return
+    destination = dest_results[0]
+
+    # Don't chase into safe rooms (re-check in case it changed)
+    if getattr(destination.db, "is_safe", False):
+        _abort_chase(mob)
+        return
+
+    # Move the mob
     old_room = mob.location
     mob.move_to(destination, quiet=False)
 
     if old_room:
         old_room.msg_contents(
-            f"|r{mob.key} chases after {target.key}!|n"
+            f"|r{mob.key} charges after its prey!|n"
         )
 
-    # Re-engage in the new room if target is there
-    if target.location == destination:
-        # Don't fight in safe rooms
-        if not getattr(destination.db, "is_safe", False):
-            try:
-                from contrib_dorfin.combat_handler import CombatHandler
-                handler = CombatHandler.get_or_create(destination)
-                handler.add_combatant(mob, target)
-                handler.add_combatant(target, mob)
-                destination.msg_contents(
-                    f"|r{mob.key} catches up and attacks {target.key}!|n"
-                )
-            except Exception as err:
-                log_err(f"trigger_chase: combat re-engage failed: {err}")
+    # After another delay, re-engage combat
+    from evennia.utils import delay
+    delay(CHASE_ENGAGE_DELAY, _chase_engage, mob_dbref, target_dbref,
+          dest_dbref, persistent=False)
+
+
+def _chase_engage(mob_dbref, target_dbref, dest_dbref):
+    """
+    Delayed callback: re-engage combat with the target if both are
+    in the same room. Called CHASE_ENGAGE_DELAY seconds after the
+    mob arrived.
+    """
+    from evennia import search_object
+
+    mob_results = search_object(mob_dbref)
+    if not mob_results:
+        return
+    mob = mob_results[0]
+
+    if hasattr(mob, "is_alive") and not mob.is_alive():
+        return
+    if getattr(mob.db, "in_combat", False):
+        return
+
+    target_results = search_object(target_dbref)
+    if not target_results:
+        _abort_chase(mob)
+        return
+    target = target_results[0]
+
+    # Target must still be in the same room
+    if target.location != mob.location:
+        _abort_chase(mob)
+        return
+
+    # Don't fight in safe rooms
+    if getattr(mob.location.db, "is_safe", False):
+        _abort_chase(mob)
+        return
+
+    try:
+        from contrib_dorfin.combat_handler import CombatHandler
+        handler = CombatHandler.get_or_create(mob.location)
+        handler.add_combatant(mob, target)
+        handler.add_combatant(target, mob)
+        mob.location.msg_contents(
+            f"|r{mob.key} catches up and attacks {target.key}!|n"
+        )
+    except Exception as err:
+        log_err(f"_chase_engage: combat re-engage failed: {err}")
+
+
+def _abort_chase(mob):
+    """Clear chase state and return mob home if possible."""
+    scripts = mob.scripts.get("MobMovementScript")
+    if scripts:
+        script = scripts[0]
+        script._return_home(mob)
+        script._clear_chase()
 
 
 def attach_movement_script(mob, move_mode="stationary", move_interval=30,

@@ -3,37 +3,31 @@ DorfinMUD Mob Typeclass
 ========================
 
 AwtownMob extends AwtownNPC with combat capabilities: HP, stats, loot,
-XP value, and death handling. This is the typeclass for all killable
-creatures in DorfinMUD.
+XP value, death handling, movement behaviors, and wimpy auto-flee.
 
-Mobs do NOT use TraitHandler or BuffHandler — their stats are stored as
-simple db attributes for performance and simplicity. The combat rules
-engine reads them via get_stat() / get_hp() / get_hp_max(), which match
-the same interface as AwtownCharacter.
+This is the typeclass for all killable creatures in DorfinMUD. Mobs do
+NOT use TraitHandler or BuffHandler — their stats are stored as simple
+db attributes for performance and simplicity. The combat rules engine
+reads them via get_stat() / get_hp() / get_hp_max(), which match the
+same interface as AwtownCharacter.
 
-Creating a mob
---------------
+For the full mob system reference (spawning, respawning, movement,
+combat integration, admin commands), see:
 
-    from evennia import create_object
+    contrib_dorfin/README_mobs.md
 
-    goblin = create_object(
-        "typeclasses.mobs.AwtownMob",
-        key="a goblin",
-        location=some_room,
+Quick spawn
+-----------
+
+    from contrib_dorfin.mob_spawner import spawn_and_track
+
+    wolf, script = spawn_and_track(
+        room, name="a fierce wolf", hp=30, level=2,
+        damage_dice="1d6", xp_value=40,
+        chase=True, chase_range=3,      # follows fleeing players
+        move_mode="wander",             # wanders between rooms
+        wimpy=10,                       # flees at 10 HP
     )
-    goblin.db.stats = {"str": 8, "dex": 12, "agi": 14, "con": 8,
-                       "end": 8, "int": 6, "wis": 6, "per": 10,
-                       "cha": 4, "lck": 8}
-    goblin.db.hp_max = 30
-    goblin.db.hp = 30
-    goblin.db.level = 2
-    goblin.db.xp_value = 50
-    goblin.db.damage_dice = "1d6"
-    goblin.db.armor_bonus = 2
-    goblin.db.loot_table = [
-        {"prototype": "rusty_dagger", "chance": 0.3},
-        {"prototype": "copper_coins_small", "chance": 0.8},
-    ]
 
 Loot table
 ----------
@@ -55,6 +49,7 @@ Death flow
 3. XP is awarded to participants (handled by combat handler)
 4. Corpse is spawned with rolled loot
 5. Mob object is deleted
+6. MobRespawnScript (on home room) detects deletion -> spawns fresh mob
 """
 
 from random import random
@@ -84,7 +79,7 @@ class AwtownMob(AwtownNPC):
         npc_role       (str)
         dialogue       (dict)
 
-    db Attributes (new):
+    db Attributes (combat):
         is_mob         (bool)  : Always True. Used by combat rules to identify mobs.
         hp             (int)   : Current hit points.
         hp_max         (int)   : Maximum hit points.
@@ -95,8 +90,20 @@ class AwtownMob(AwtownNPC):
         damage_bonus   (int)   : Flat damage bonus added to attacks.
         armor_bonus    (int)   : Flat defense bonus.
         loot_table     (list)  : List of loot dicts (see module docstring).
+
+    db Attributes (behavior):
         aggro          (bool)  : Whether this mob attacks on sight (future use).
         combat_target  (obj)   : Current combat target (set by combat handler).
+        wimpy          (int)   : Auto-flee HP threshold. 0 = fight to the death.
+
+    db Attributes (movement — see contrib_dorfin.mob_movement):
+        move_mode      (str)   : "stationary", "wander", or "patrol".
+        move_interval  (int)   : Seconds between movement ticks (default 30).
+        wander_chance  (float) : Chance to move each wander tick (0.0-1.0).
+        patrol_route   (list)  : List of room dbrefs for patrol path.
+        chase          (bool)  : Follow fleeing players through exits.
+        chase_range    (int)   : Max rooms to chase before returning home.
+        home_room      (str)   : Dbref of home room (set on spawn).
     """
 
     def at_object_creation(self):

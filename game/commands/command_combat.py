@@ -185,8 +185,21 @@ class CmdFlee(Command):
                 f"|y{caller.name} flees from combat!|n",
                 exclude=[caller],
             )
+            # Collect mob opponents before removing from combat (for chase)
+            mob_opponents = [
+                opp for opp in opponents
+                if hasattr(opp, "db") and getattr(opp.db, "is_mob", False)
+            ]
             handler.remove_combatant(caller)
-            handler._move_to_random_exit(caller)
+            exit_used = handler._move_to_random_exit(caller)
+            # Trigger chase for mob opponents
+            if exit_used:
+                try:
+                    from contrib_dorfin.mob_movement import trigger_chase
+                    for mob in mob_opponents:
+                        trigger_chase(mob, caller, exit_used)
+                except ImportError:
+                    pass
         else:
             caller.msg(
                 f"|rYou try to flee but can't break free! "

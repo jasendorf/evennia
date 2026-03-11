@@ -3,6 +3,7 @@ Admin combat commands
 =====================
 
     @trainingroom       -- create/go to training room, ensure mob + respawn
+    @testarena          -- create multi-room test area for movement behaviors
     @spawnmob <name>    -- spawn a test mob in current room with respawn
     @stopcombat         -- force-stop combat in current room, clear all state
     @combatdebug        -- show combat handler state for current room
@@ -118,6 +119,182 @@ class CmdTrainingRoom(Command):
 
 
 # ---------------------------------------------------------------------------
+# @testarena
+# ---------------------------------------------------------------------------
+
+class CmdTestArena(Command):
+    """
+    Create a multi-room test arena for mob movement behaviors.
+
+    Usage:
+        @testarena
+
+    Creates four connected rooms in a loop:
+
+        [Arena North] --- [Arena East]
+              |                |
+        [Arena West]  --- [Arena South]
+
+    Each room is non-safe. Spawns test mobs:
+      - Arena North: a wandering rat (wander mode)
+      - Arena East:  a patrolling guard (patrol mode, loops all 4 rooms)
+      - Arena South: a fierce wolf (chase mode, follows you 3 rooms)
+      - Arena West:  empty (for observing arrivals)
+
+    Safe to run repeatedly — finds existing rooms by tag.
+    """
+
+    key = "@testarena"
+    locks = "cmd:perm(Admin) or perm(Builder)"
+    help_category = "Admin"
+
+    def func(self):
+        caller = self.caller
+
+        import evennia
+        from typeclasses.rooms import AwtownRoom
+        from evennia.objects.objects import DefaultExit
+
+        # Room definitions: (tag, name, description)
+        room_defs = [
+            ("test_arena_north", "Arena North",
+             "A sandy clearing ringed by wooden fences. Scuff marks cover the "
+             "ground. A weathered sign reads: '|wWander Zone|n'. Exits lead "
+             "east and west."),
+            ("test_arena_east", "Arena East",
+             "A cobblestone yard with torch sconces bolted to iron posts. "
+             "A sign reads: '|wPatrol Route|n'. Exits lead north and south."),
+            ("test_arena_south", "Arena South",
+             "A muddy pit surrounded by sharpened stakes. A sign reads: "
+             "'|wChase Zone — watch your back|n'. Exits lead east and west."),
+            ("test_arena_west", "Arena West",
+             "An empty stretch of hard-packed dirt. Good for observing mob "
+             "arrivals. A sign reads: '|wObservation Point|n'. Exits lead "
+             "north and south."),
+        ]
+
+        # Create or find rooms
+        rooms = {}
+        for tag, name, desc in room_defs:
+            existing = evennia.search_tag(tag, category="awtown_dbkey")
+            if existing:
+                room = existing[0]
+                caller.msg(f"|yFound existing: {room.name} (#{room.id})|n")
+            else:
+                room = create_object(AwtownRoom, key=name)
+                room.db.desc = desc
+                room.db.is_safe = False
+                room.db.is_outdoor = True
+                room.db.room_type = "arena"
+                room.tags.add(tag, category="awtown_dbkey")
+                caller.msg(f"|gCreated: {room.name} (#{room.id})|n")
+            rooms[tag] = room
+
+        north = rooms["test_arena_north"]
+        east = rooms["test_arena_east"]
+        south = rooms["test_arena_south"]
+        west = rooms["test_arena_west"]
+
+        # Connect rooms in a loop: N-E-S-W-N
+        exit_map = [
+            (north, "east", east, "west"),
+            (east, "south", south, "north"),
+            (south, "west", west, "east"),
+            (west, "north", north, "south"),
+        ]
+
+        for from_room, exit_name, to_room, return_name in exit_map:
+            if not any(ex.key == exit_name for ex in from_room.exits):
+                create_object(DefaultExit, key=exit_name,
+                              location=from_room, destination=to_room)
+            if not any(ex.key == return_name for ex in to_room.exits):
+                create_object(DefaultExit, key=return_name,
+                              location=to_room, destination=from_room)
+
+        # Link to training yard if it exists
+        training = evennia.search_tag("training_yard", category="awtown_dbkey")
+        if training:
+            ty = training[0]
+            if not any(ex.key == "arena" for ex in ty.exits):
+                create_object(DefaultExit, key="arena",
+                              location=ty, destination=north,
+                              aliases=["test arena"])
+            if not any(ex.key == "training" for ex in north.exits):
+                create_object(DefaultExit, key="training",
+                              location=north, destination=ty,
+                              aliases=["yard", "back"])
+            caller.msg("|gLinked to Training Yard.|n")
+
+        caller.msg("")
+
+        # Build patrol route (all 4 rooms in loop order)
+        patrol_route = [north.dbref, east.dbref, south.dbref, west.dbref]
+
+        # Spawn mobs if not already present
+        mob_defs = [
+            (north, {
+                "name": "a wandering rat", "hp": 15, "level": 1,
+                "xp_value": 15, "damage_dice": "1d4",
+                "desc": "A mangy brown rat. It skitters nervously, looking "
+                        "for an exit.",
+                "move_mode": "wander", "move_interval": 20,
+                "wander_chance": 0.6,
+            }),
+            (east, {
+                "name": "a patrolling guard", "hp": 40, "level": 3,
+                "xp_value": 60, "damage_dice": "1d8", "armor_bonus": 3,
+                "desc": "A stern guard in dented plate armor. He marches a "
+                        "steady circuit around the arena.",
+                "move_mode": "patrol", "move_interval": 15,
+                "patrol_route": patrol_route,
+            }),
+            (south, {
+                "name": "a fierce wolf", "hp": 30, "level": 2,
+                "xp_value": 40, "damage_dice": "1d6",
+                "desc": "A lean grey wolf with hungry yellow eyes. It looks "
+                        "like it would chase anything that runs.",
+                "chase": True, "chase_range": 3,
+            }),
+        ]
+
+        for room, kwargs in mob_defs:
+            # Check if a respawn script already has a living mob
+            respawns = room.scripts.get("MobRespawnScript")
+            if respawns and respawns[0].is_mob_alive():
+                caller.msg(
+                    f"|y  {kwargs['name']} already alive in {room.name}.|n"
+                )
+                continue
+
+            cleanup_combat_zombies(room)
+            if is_combat_active(room):
+                caller.msg(
+                    f"|r  Combat active in {room.name}, skipping spawn.|n"
+                )
+                continue
+
+            mob, script = spawn_and_track(room, **kwargs)
+            caller.msg(
+                f"|g  Spawned {mob.key} (#{mob.id}) in {room.name}|n"
+            )
+
+        # Teleport to arena north
+        caller.move_to(north, quiet=True)
+        caller.msg("")
+        caller.msg(caller.at_look(north))
+        caller.msg(
+            "\n|w=== Test Arena Ready ===|n\n"
+            "  |yArena North|n: wandering rat (wanders every ~20s)\n"
+            "  |yArena East|n:  patrolling guard (patrols all 4 rooms)\n"
+            "  |yArena South|n: fierce wolf (chases 3 rooms on flee)\n"
+            "  |yArena West|n:  empty (watch for arrivals)\n"
+            "\n"
+            "  Try: |wkill rat|n then |wflee|n to test chase.\n"
+            "  Use |w@combatdebug|n to inspect state."
+        )
+
+
+# ---------------------------------------------------------------------------
 # @spawnmob
 # ---------------------------------------------------------------------------
 
@@ -126,11 +303,21 @@ class CmdSpawnMob(Command):
     Spawn a test mob in your current room with auto-respawn.
 
     Usage:
-        @spawnmob
-        @spawnmob <name>
+        @spawnmob [name] [/wander] [/patrol] [/chase]
+
+    Switches:
+        /wander  - mob wanders to adjacent rooms randomly
+        /patrol  - mob patrols (requires patrol route, placeholder for now)
+        /chase   - mob chases fleeing players (up to 3 rooms)
 
     The room must not be safe. Default is "a training dummy".
     A respawn script is attached so the mob returns after death.
+
+    Examples:
+        @spawnmob a wandering rat /wander
+        @spawnmob a guard /patrol
+        @spawnmob a fierce wolf /chase
+        @spawnmob a rabid dog /wander /chase
     """
 
     key = "@spawnmob"
@@ -148,10 +335,47 @@ class CmdSpawnMob(Command):
             )
             return
 
-        name = self.args.strip() or "a training dummy"
-        mob, script = spawn_and_track(room, name=name)
+        # Parse switches from args
+        args = self.args.strip()
+        do_wander = False
+        do_patrol = False
+        do_chase = False
+
+        parts = args.split()
+        name_parts = []
+        for part in parts:
+            if part.lower() == "/wander":
+                do_wander = True
+            elif part.lower() == "/patrol":
+                do_patrol = True
+            elif part.lower() == "/chase":
+                do_chase = True
+            else:
+                name_parts.append(part)
+
+        name = " ".join(name_parts) if name_parts else "a training dummy"
+
+        # Determine move mode
+        if do_patrol:
+            move_mode = "patrol"
+        elif do_wander:
+            move_mode = "wander"
+        else:
+            move_mode = "stationary"
+
+        mob, script = spawn_and_track(
+            room, name=name, move_mode=move_mode, chase=do_chase,
+        )
         caller.msg(f"|gSpawned: {mob.key} (#{mob.id}) in {room.name}|n")
         caller.msg(f"|gRespawn script tracking {mob.dbref}.|n")
+
+        mode_info = []
+        if move_mode != "stationary":
+            mode_info.append(f"mode={move_mode}")
+        if do_chase:
+            mode_info.append("chase=on")
+        if mode_info:
+            caller.msg(f"|gMovement: {', '.join(mode_info)}|n")
 
 
 # ---------------------------------------------------------------------------

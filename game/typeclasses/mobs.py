@@ -124,6 +124,16 @@ class AwtownMob(AwtownNPC):
         # Behavior
         self.db.aggro = False
         self.db.combat_target = None
+        self.db.wimpy = 0              # 0 = fight to the death
+
+        # Movement
+        self.db.move_mode = "stationary"   # "wander", "patrol", or "stationary"
+        self.db.move_interval = 30         # seconds between movement ticks
+        self.db.wander_chance = 0.5        # chance to move each wander tick
+        self.db.patrol_route = []          # list of room dbrefs for patrol
+        self.db.chase = False              # follow fleeing players
+        self.db.chase_range = 3            # max rooms to chase before returning
+        self.db.home_room = None           # dbref of home room (set on spawn)
 
         # Equipment dict (for mobs that wield weapons)
         self.db.equipment = {

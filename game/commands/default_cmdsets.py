@@ -50,7 +50,8 @@ from commands.command_combat import (
     CmdKill, CmdFlee, CmdConsider, CmdWimpy, CmdRest, CmdScore, CmdLoot,
 )
 from commands.command_admin_combat import (
-    CmdTrainingRoom, CmdSpawnMob, CmdStopCombat, CmdCombatDebug, CmdFixCombat,
+    CmdTrainingRoom, CmdTestArena, CmdSpawnMob, CmdStopCombat, CmdCombatDebug,
+    CmdFixCombat,
 )
 from commands.command_party import CmdParty, CmdAutoAssist
 from commands.command_group_combat import CmdAssist, CmdRescue
@@ -133,7 +134,8 @@ class CharacterCmdSet(default_cmds.CharacterCmdSet):
 
         # --- Admin: Combat (Phase 5) ---
         self.add(CmdTrainingRoom())    # @trainingroom
-        self.add(CmdSpawnMob())        # @spawnmob [name]
+        self.add(CmdTestArena())       # @testarena (multi-room movement test)
+        self.add(CmdSpawnMob())        # @spawnmob [name] [/wander] [/patrol] [/chase]
         self.add(CmdStopCombat())      # @stopcombat
         self.add(CmdCombatDebug())     # @combatdebug / @cdebug
         self.add(CmdFixCombat())       # @fixcombat (global cleanup)

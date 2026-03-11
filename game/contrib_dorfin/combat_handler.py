@@ -553,12 +553,11 @@ class CombatHandler(DefaultScript):
         """
         Check if a combatant should auto-flee due to wimpy setting.
 
+        Works for both players and mobs. Mobs default to wimpy=0 (fight
+        to the death) but can have db.wimpy set to trigger auto-flee.
+
         Returns True if they fled (and were removed from combat).
         """
-        is_mob = getattr(combatant.db, "is_mob", False) if hasattr(combatant, "db") else False
-        if is_mob:
-            return False
-
         wimpy = getattr(combatant.db, "wimpy", 0) or 0
         if wimpy <= 0:
             return False
@@ -572,28 +571,58 @@ class CombatHandler(DefaultScript):
         opponents = self.get_opponents(combatant)
         result = check_flee(combatant, opponents)
 
+        is_mob = getattr(combatant.db, "is_mob", False) if hasattr(combatant, "db") else False
         room = self.obj
         if result["success"]:
             if room:
-                room.msg_contents(
-                    f"|y{combatant.name} panics and flees from combat!|n",
-                    exclude=[combatant],
-                )
-            combatant.msg("|yYour wimpy threshold triggered! You flee from combat!|n")
+                if is_mob:
+                    room.msg_contents(
+                        f"|y{combatant.name} whimpers and flees!|n"
+                    )
+                else:
+                    room.msg_contents(
+                        f"|y{combatant.name} panics and flees from combat!|n",
+                        exclude=[combatant],
+                    )
+                    combatant.msg("|yYour wimpy threshold triggered! You flee from combat!|n")
+            # Collect mob opponents before removing from combat (for chase)
+            mob_opponents = [
+                opp for opp in opponents
+                if hasattr(opp, "db") and getattr(opp.db, "is_mob", False)
+            ]
             self.remove_combatant(combatant)
-            self._move_to_random_exit(combatant)
+            exit_used = self._move_to_random_exit(combatant)
+            # Trigger chase for mob opponents (only when a player flees)
+            if exit_used and not is_mob:
+                try:
+                    from contrib_dorfin.mob_movement import trigger_chase
+                    for mob in mob_opponents:
+                        trigger_chase(mob, combatant, exit_used)
+                except ImportError:
+                    pass
             return True
         else:
-            combatant.msg(
-                "|rYour wimpy triggered but you failed to flee!|n"
-            )
+            if is_mob:
+                if room:
+                    room.msg_contents(
+                        f"|y{combatant.name} tries to flee but can't escape!|n"
+                    )
+            else:
+                combatant.msg(
+                    "|rYour wimpy triggered but you failed to flee!|n"
+                )
             return False
 
     def _move_to_random_exit(self, combatant):
-        """Move a fleeing combatant through a random available exit."""
+        """
+        Move a fleeing combatant through a random available exit.
+
+        Returns:
+            The exit object used, or None if flee failed.
+        """
         room = self.obj
         if not room:
-            return
+            return None
 
         # Prefer open exits (skip closed gates)
         exits = [
@@ -604,11 +633,12 @@ class CombatHandler(DefaultScript):
         if not exits:
             # All exits are closed gates — can't flee anywhere
             combatant.msg("|rAll exits are blocked! You can't escape!|n")
-            return
+            return None
 
         from random import choice
         exit_obj = choice(exits)
         combatant.move_to(exit_obj.destination, quiet=False)
+        return exit_obj
 
     # ------------------------------------------------------------------
     # Target management

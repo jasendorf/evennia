@@ -120,7 +120,9 @@ DEFAULT_MOB_STATS = {
 
 def spawn_mob(room, name="a mob", stats=None, hp=20, level=1,
               xp_value=10, damage_dice="1d4", armor_bonus=0, desc=None,
-              loot_table=None):
+              loot_table=None, wimpy=0, move_mode="stationary",
+              move_interval=30, wander_chance=0.5, patrol_route=None,
+              chase=False, chase_range=3):
     """
     Create a mob in a room.
 
@@ -138,6 +140,12 @@ def spawn_mob(room, name="a mob", stats=None, hp=20, level=1,
         armor_bonus (int): Flat defense bonus.
         desc (str): Description. Auto-generated if None.
         loot_table (list): List of loot dicts. Empty list if None.
+        move_mode (str): "wander", "patrol", or "stationary".
+        move_interval (int): Seconds between movement ticks.
+        wander_chance (float): Chance to move each wander tick (0.0-1.0).
+        patrol_route (list): List of room dbrefs for patrol path.
+        chase (bool): Whether this mob chases fleeing players.
+        chase_range (int): Max rooms to chase before returning home.
 
     Returns:
         AwtownMob: The created mob object.
@@ -159,6 +167,28 @@ def spawn_mob(room, name="a mob", stats=None, hp=20, level=1,
     mob.db.damage_dice = damage_dice
     mob.db.armor_bonus = armor_bonus
     mob.db.loot_table = loot_table or []
+    mob.db.wimpy = wimpy
+
+    # Movement config
+    mob.db.move_mode = move_mode
+    mob.db.move_interval = move_interval
+    mob.db.wander_chance = wander_chance
+    mob.db.patrol_route = patrol_route or []
+    mob.db.chase = chase
+    mob.db.chase_range = chase_range
+    mob.db.home_room = room.dbref
+
+    # Attach movement script if needed
+    if move_mode != "stationary" or chase:
+        try:
+            from contrib_dorfin.mob_movement import attach_movement_script
+            attach_movement_script(
+                mob, move_mode=move_mode, move_interval=move_interval,
+                wander_chance=wander_chance, patrol_route=patrol_route,
+                chase=chase, chase_range=chase_range, home_room=room.dbref,
+            )
+        except Exception as err:
+            log_info(f"spawn_mob: failed to attach movement script: {err}")
 
     return mob
 

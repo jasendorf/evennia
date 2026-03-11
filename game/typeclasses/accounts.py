@@ -57,6 +57,16 @@ class Account(_BASE_ACCOUNT):
                 session=session,
             )
 
+        # Migration: ensure _last_puppet is in _playable_characters.
+        # Pre-chargen characters were auto-puppeted via _last_puppet and
+        # may never have been added to the playable characters list.
+        last_puppet = self.db._last_puppet
+        if last_puppet:
+            current = self.db._playable_characters or []
+            if last_puppet not in current:
+                current.append(last_puppet)
+                self.db._playable_characters = current
+
         # Launch the login menu
         EvMenu(
             self,

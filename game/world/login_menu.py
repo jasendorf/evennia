@@ -9,11 +9,21 @@ Unlike the chargen menu (where caller = session), here the
 caller is the **Account** object.
 """
 
+import string
+from random import choices
+
 import evennia
 from django.conf import settings
+from evennia.objects.models import ObjectDB
 from evennia.utils import dedent
+from evennia.utils.evmenu import EvMenu
 
 _MAX_NR_CHARACTERS = getattr(settings, "MAX_NR_CHARACTERS", 6) or 6
+
+try:
+    _CHARGEN_MENU = settings.CHARGEN_MENU
+except AttributeError:
+    _CHARGEN_MENU = "world.chargen"
 
 
 def menunode_charselect(caller, raw_string="", **kwargs):
@@ -181,27 +191,68 @@ def _do_play(account, arg, characters, session):
 
 
 def _do_create(account, characters, session):
-    """Start character creation via the contrib's charcreate command."""
-    complete_count = len([c for c in characters if not c.db.chargen_step])
+    """Create a new character or resume an in-progress one, then launch chargen."""
     in_progress = [c for c in characters if c.db.chargen_step]
+    sess = session or (account.sessions.get()[0] if account.sessions.get() else None)
 
-    if in_progress:
-        # Resume existing in-progress character
-        sess = session or (account.sessions.get()[0] if account.sessions.get() else None)
-        if sess:
-            account.execute_cmd("charcreate", session=sess)
-        return None
-
-    if len(characters) >= _MAX_NR_CHARACTERS:
+    if not sess:
         return "menunode_charselect", {
             "session": session,
-            "error": f"You've reached the maximum of {_MAX_NR_CHARACTERS} characters.",
+            "error": "No active session found.",
         }
 
-    # Start new character creation
-    sess = session or (account.sessions.get()[0] if account.sessions.get() else None)
-    if sess:
-        account.execute_cmd("charcreate", session=sess)
+    if in_progress:
+        new_char = in_progress[0]
+    else:
+        if len(characters) >= _MAX_NR_CHARACTERS:
+            return "menunode_charselect", {
+                "session": session,
+                "error": f"You've reached the maximum of {_MAX_NR_CHARACTERS} characters.",
+            }
+
+        # Create character with temp random name (replaced during chargen)
+        key = "".join(choices(string.ascii_letters + string.digits, k=10))
+        new_char, errors = account.create_character(
+            key=key, location=None, ip=sess.address,
+        )
+        if errors or not new_char:
+            err_msg = " ".join(errors) if errors else "Unknown error."
+            return "menunode_charselect", {
+                "session": session,
+                "error": f"Could not create character: {err_msg}",
+            }
+        new_char.db.chargen_step = "menunode_welcome"
+        try:
+            new_char.db.prelogout_location = ObjectDB.objects.get_id(
+                settings.START_LOCATION
+            )
+        except Exception:
+            pass
+
+    startnode = new_char.db.chargen_step
+    sess.new_char = new_char
+
+    def finish_char_callback(sess_obj, menu):
+        char = sess_obj.new_char
+        if char.db.chargen_step:
+            # Exited early — show the OOC account look
+            account.msg(
+                account.at_look(target=account.characters.all(), session=sess_obj),
+                session=sess_obj,
+            )
+        else:
+            # Chargen complete — puppet the character
+            try:
+                account.puppet_object(sess_obj, char)
+            except RuntimeError:
+                account.msg("Could not enter the game.", session=sess_obj)
+
+    EvMenu(
+        sess,
+        _CHARGEN_MENU,
+        startnode=startnode,
+        cmd_on_exit=finish_char_callback,
+    )
     return None
 
 

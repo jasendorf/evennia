@@ -300,29 +300,60 @@ class CmdTestArena(Command):
 
 class CmdSpawnMob(Command):
     """
-    Spawn a test mob in your current room with auto-respawn.
+    Spawn a mob in your current room with auto-respawn.
 
     Usage:
-        @spawnmob [name] [/wander] [/patrol] [/chase]
+        @spawnmob <name> [key=value ...] [/wander] [/patrol] [/chase]
 
-    Switches:
+    Switches (shorthand flags):
         /wander  - mob wanders to adjacent rooms randomly
-        /patrol  - mob patrols (requires patrol route, placeholder for now)
-        /chase   - mob chases fleeing players (up to 3 rooms)
+        /patrol  - mob patrols (requires patrol_route)
+        /chase   - mob chases fleeing players
 
-    The room must not be safe. Default is "a training dummy".
-    A respawn script is attached so the mob returns after death.
+    Key=value parameters:
+        hp=30              hit points (current and max)
+        level=2            mob level
+        xp=50              XP awarded on kill
+        damage=1d6         natural attack dice
+        armor=2            flat defense bonus
+        wimpy=10           auto-flee at this HP (0 = fight to death)
+        move_interval=20   seconds between movement ticks
+        wander_chance=0.6  chance to move each wander tick (0.0-1.0)
+        chase_range=3      max rooms to chase before returning home
+        respawn=60         seconds between respawn checks
+
+    The room must not be safe. A respawn script is attached so the
+    mob returns after death.
 
     Examples:
-        @spawnmob a wandering rat /wander
-        @spawnmob a guard /patrol
-        @spawnmob a fierce wolf /chase
-        @spawnmob a rabid dog /wander /chase
+        @spawnmob a goblin hp=30 level=2 damage=1d6 xp=40
+        @spawnmob a wandering rat /wander hp=15 wander_chance=0.6
+        @spawnmob a fierce wolf /chase hp=30 chase_range=3
+        @spawnmob a cowardly goblin hp=40 wimpy=15 /wander /chase
+        @spawnmob a guard /patrol hp=50 level=3 armor=3
     """
 
     key = "@spawnmob"
     locks = "cmd:perm(Admin) or perm(Builder)"
     help_category = "Admin"
+
+    # Map of short key names to spawn_and_track parameter names
+    PARAM_MAP = {
+        "hp": ("hp", int),
+        "level": ("level", int),
+        "xp": ("xp_value", int),
+        "xp_value": ("xp_value", int),
+        "damage": ("damage_dice", str),
+        "damage_dice": ("damage_dice", str),
+        "armor": ("armor_bonus", int),
+        "armor_bonus": ("armor_bonus", int),
+        "wimpy": ("wimpy", int),
+        "move_interval": ("move_interval", int),
+        "wander_chance": ("wander_chance", float),
+        "chase_range": ("chase_range", int),
+        "respawn": ("respawn_delay", int),
+        "respawn_delay": ("respawn_delay", int),
+    }
 
     def func(self):
         caller = self.caller
@@ -335,21 +366,39 @@ class CmdSpawnMob(Command):
             )
             return
 
-        # Parse switches from args
+        # Parse args into switches, key=value params, and name words
         args = self.args.strip()
         do_wander = False
         do_patrol = False
         do_chase = False
-
-        parts = args.split()
+        params = {}
         name_parts = []
-        for part in parts:
-            if part.lower() == "/wander":
+
+        for part in args.split():
+            lower = part.lower()
+            if lower == "/wander":
                 do_wander = True
-            elif part.lower() == "/patrol":
+            elif lower == "/patrol":
                 do_patrol = True
-            elif part.lower() == "/chase":
+            elif lower == "/chase":
                 do_chase = True
+            elif "=" in part:
+                key, _, val = part.partition("=")
+                key = key.lower().strip()
+                val = val.strip()
+                if key in self.PARAM_MAP:
+                    param_name, param_type = self.PARAM_MAP[key]
+                    try:
+                        params[param_name] = param_type(val)
+                    except ValueError:
+                        caller.msg(f"|rBad value for {key}: '{val}'|n")
+                        return
+                else:
+                    caller.msg(
+                        f"|rUnknown parameter: {key}|n\n"
+                        f"Valid: {', '.join(sorted(set(k for k in self.PARAM_MAP)))}"
+                    )
+                    return
             else:
                 name_parts.append(part)
 
@@ -357,25 +406,39 @@ class CmdSpawnMob(Command):
 
         # Determine move mode
         if do_patrol:
-            move_mode = "patrol"
+            params["move_mode"] = "patrol"
         elif do_wander:
-            move_mode = "wander"
-        else:
-            move_mode = "stationary"
+            params["move_mode"] = "wander"
+
+        if do_chase:
+            params["chase"] = True
+
+        # Extract respawn_delay separately (not a spawn_mob param)
+        respawn_delay = params.pop("respawn_delay", 30)
 
         mob, script = spawn_and_track(
-            room, name=name, move_mode=move_mode, chase=do_chase,
+            room, name=name, respawn_delay=respawn_delay, **params,
         )
-        caller.msg(f"|gSpawned: {mob.key} (#{mob.id}) in {room.name}|n")
-        caller.msg(f"|gRespawn script tracking {mob.dbref}.|n")
 
-        mode_info = []
-        if move_mode != "stationary":
-            mode_info.append(f"mode={move_mode}")
-        if do_chase:
-            mode_info.append("chase=on")
-        if mode_info:
-            caller.msg(f"|gMovement: {', '.join(mode_info)}|n")
+        # Build summary
+        caller.msg(f"|gSpawned: {mob.key} (#{mob.id}) in {room.name}|n")
+        caller.msg(f"|gRespawn: every {respawn_delay}s, tracking {mob.dbref}|n")
+
+        details = []
+        details.append(f"HP:{mob.db.hp}/{mob.db.hp_max}")
+        details.append(f"Lv:{mob.db.level}")
+        details.append(f"XP:{mob.db.xp_value}")
+        details.append(f"Dmg:{mob.db.damage_dice}")
+        if mob.db.armor_bonus:
+            details.append(f"Armor:{mob.db.armor_bonus}")
+        if mob.db.wimpy:
+            details.append(f"Wimpy:{mob.db.wimpy}")
+        mode = mob.db.move_mode or "stationary"
+        if mode != "stationary":
+            details.append(f"Move:{mode}")
+        if mob.db.chase:
+            details.append(f"Chase:{mob.db.chase_range}rm")
+        caller.msg(f"|g  {' | '.join(details)}|n")
 
 
 # ---------------------------------------------------------------------------

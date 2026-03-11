@@ -23,7 +23,7 @@ def menunode_charselect(caller, raw_string="", **kwargs):
     ``caller`` is the Account.
     """
     account = caller
-    characters = [c for c in account.characters if c]
+    characters = [c for c in account.characters.all() if c]
     complete_chars = [c for c in characters if not c.db.chargen_step]
     in_progress = [c for c in characters if c.db.chargen_step]
     total = len(characters)
@@ -93,7 +93,7 @@ def _parse_input(caller, raw_string, session=None, **kwargs):
     action = parts[0].lower()
     arg = parts[1].strip() if len(parts) > 1 else ""
 
-    characters = [c for c in account.characters if c]
+    characters = [c for c in account.characters.all() if c]
 
     # --- play ---
     if action in ("play", "p", "ic"):
@@ -174,7 +174,7 @@ def _do_play(account, arg, characters, session):
         }
 
     # Puppet the character
-    sess = session or account.sessions.get()[0] if account.sessions.get() else None
+    sess = session or (account.sessions.get()[0] if account.sessions.get() else None)
     if sess:
         account.puppet_object(sess, target)
     return None

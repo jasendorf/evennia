@@ -37,8 +37,19 @@ class Account(_BASE_ACCOUNT):
         Instead of the default behaviour (show OOC screen / auto-puppet),
         launch our custom login menu EvMenu.
         """
-        # Minimal bookkeeping that DefaultAccount.at_post_login normally does:
-        # announce to other sessions on this account, if any.
+        # Restore saved protocol flags (terminal size, colour, etc.)
+        protocol_flags = self.attributes.get("_saved_protocol_flags", {})
+        if session and protocol_flags:
+            session.update_flags(**protocol_flags)
+
+        # Tell the client the login succeeded
+        if session:
+            session.msg(logged_in={})
+
+        # Announce connection to the connect channel
+        self._send_to_connect_channel(f"|G{self.key} connected|n")
+
+        # Announce to other sessions on this account, if any
         nsess = len(self.sessions.all())
         if nsess > 1:
             self.msg(

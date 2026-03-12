@@ -95,11 +95,33 @@ class MobMovementScript(DefaultScript):
         if not mob or not mob.pk:
             self.stop()
             return
-
+ 
         # Don't move while in combat
         if getattr(mob.db, "in_combat", False):
             return
-
+ 
+        # FUTURE — aggro-on-sight hook
+        # When mob.db.aggro is wired up (currently marked "future use" on AwtownMob),
+        # the aggro scan belongs here — after the in_combat guard so a fighting mob
+        # never double-aggros, and before the movement dispatch so it can short-circuit
+        # movement if a target is found.
+        #
+        # IMPORTANT: When implementing aggro-on-sight, skip any character whose
+        # db.is_renting is True. Renting characters are in a paid safe state and
+        # must be invisible to mob aggro. db.is_resting (free rest) does NOT grant
+        # this protection — a resting character can be interrupted by an aggroing mob.
+        #
+        # Example skeleton:
+        #
+        #   if getattr(mob.db, "aggro", False) and not self.db.chase_target:
+        #       for obj in mob.location.contents:
+        #           if getattr(obj.db, "is_player", False):
+        #               if getattr(obj.db, "is_renting", False):
+        #                   continue   # safe — skip renting characters
+        #               # is_resting does NOT protect the player here (intentional)
+        #               self._engage_target(mob, obj)
+        #               return
+ 
         # If we're chasing, handle chase return logic
         if self.db.chase_target:
             self._handle_chase_return(mob)

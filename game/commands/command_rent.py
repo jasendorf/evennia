@@ -5,10 +5,7 @@ Rent room command
     rent room   -- rent a room at the Hearthstone Inn for the night
 
 Must be used at the Inn Counter (room tag: tavern_sw).
-Costs 20 copper. Starts a RentScript that slowly restores HP and needs.
-
-During rest, any command triggers a warning. A second command cancels
-the rest and executes the interrupted command.
+Costs 20 copper. Starts a RentScript that heals to full over 30 seconds.
 
 Innkeeper Bess Copperladle handles check-in and check-out messages.
 
@@ -17,69 +14,24 @@ Depends on:
 """
 
 from evennia.commands.command import Command
-from evennia.commands.cmdset import CmdSet
 from evennia import DefaultScript
 from typeclasses.characters import format_money
 
 
 RENT_COST      = 20    # copper
-RENT_HP        = 5     # HP restored over the full rest
 RENT_HUNGER    = 30    # hunger restored over the full rest
 RENT_THIRST   = 30    # thirst restored over the full rest
 RENT_ROOM_TAG  = "tavern_sw"
 TICKS          = 6     # number of script repeats
-TICK_INTERVAL  = 1     # seconds between ticks (6 ticks = 6 seconds)
+TICK_INTERVAL  = 5     # seconds between ticks (6 ticks = 30 seconds)
 HP_WELL_RESTED = 0.80  # 80% HP threshold for "well rested" prompt
-
-
-class CmdRestIntercept(Command):
-    """
-    Intercepts commands while resting. First attempt warns,
-    second attempt cancels rest and runs the command.
-    """
-
-    key = "_default"
-    locks = "cmd:all()"
-    help_category = "General"
-
-    def func(self):
-        caller = self.caller
-        scripts = caller.scripts.get("RentScript")
-        if not scripts:
-            # Rest already ended, just run the command normally
-            caller.cmdset.remove("RestCmdSet")
-            caller.execute_cmd(self.raw_string)
-            return
-
-        script = scripts[0]
-        if script.db.warned:
-            # Second attempt — cancel rest and run the command
-            script.stop()
-            caller.msg("|yYou get up early, interrupting your rest.|n")
-            caller.execute_cmd(self.raw_string)
-        else:
-            # First attempt — warn
-            script.db.warned = True
-            caller.msg(
-                "|yYou stir restlessly. If you get up now you won't "
-                "finish healing.|n  (type any command again to get up)"
-            )
-
-
-class RestCmdSet(CmdSet):
-    key = "RestCmdSet"
-    priority = 200
-    mergetype = "Replace"
-
-    def at_cmdset_creation(self):
-        self.add(CmdRestIntercept())
 
 
 class RentScript(DefaultScript):
     """
     Temporary script attached to a character during their rest.
-    Restores HP, hunger, and thirst in small increments each tick.
-    Sends flavour messages at each stage.
+    Heals to full HP over 30 seconds (6 ticks x 5 seconds).
+    Also restores hunger and thirst incrementally.
     """
 
     MESSAGES = [
@@ -98,7 +50,13 @@ class RentScript(DefaultScript):
         self.repeats = TICKS
         self.persistent = False
         self.db.tick_count = 0
-        self.db.warned = False
+        self.db.hp_per_tick = 0
+
+    def at_start(self):
+        obj = self.obj
+        if obj and hasattr(obj, "get_hp") and hasattr(obj, "get_hp_max"):
+            missing = obj.get_hp_max() - obj.get_hp()
+            self.db.hp_per_tick = max(1, missing // TICKS) if missing > 0 else 0
 
     def at_repeat(self):
         obj = self.obj
@@ -108,21 +66,29 @@ class RentScript(DefaultScript):
 
         tick = self.db.tick_count or 0
 
-        # Restore a portion each tick
-        hp_per_tick = max(1, RENT_HP // TICKS)
+        # Restore HP
+        hp_per_tick = self.db.hp_per_tick or 0
+        if hp_per_tick and hasattr(obj, "heal"):
+            # Last tick: heal any remainder to guarantee full
+            if tick == TICKS - 1:
+                remaining = obj.get_hp_max() - obj.get_hp()
+                obj.heal(remaining)
+            else:
+                obj.heal(hp_per_tick)
+
+        # Restore hunger/thirst
         hunger_per_tick = RENT_HUNGER // TICKS
         thirst_per_tick = RENT_THIRST // TICKS
-
-        if hasattr(obj, "heal"):
-            obj.heal(hp_per_tick)
         if hasattr(obj, "restore_hunger"):
             obj.restore_hunger(hunger_per_tick)
         if hasattr(obj, "restore_thirst"):
             obj.restore_thirst(thirst_per_tick)
 
-        # Send message
+        # Send message with HP
         msg = self.MESSAGES[min(tick, len(self.MESSAGES) - 1)]
-        obj.msg(msg)
+        hp_now = obj.get_hp() if hasattr(obj, "get_hp") else "?"
+        hp_max = obj.get_hp_max() if hasattr(obj, "get_hp_max") else "?"
+        obj.msg(f"{msg}  |w({hp_now}/{hp_max} HP)|n")
 
         self.db.tick_count = tick + 1
 
@@ -130,7 +96,6 @@ class RentScript(DefaultScript):
         obj = self.obj
         if obj:
             obj.db.is_resting = False
-            obj.cmdset.remove("RestCmdSet")
 
 
 class CmdRentRoom(Command):
@@ -142,9 +107,8 @@ class CmdRentRoom(Command):
 
     Cost: 20 copper. Must be at the Inn Counter (inside the Hearthstone Inn).
 
-    Renting a room restores your health, hunger, and thirst gradually
-    over about 6 seconds. Any command during rest will prompt a warning;
-    a second command will cancel the rest early.
+    Renting a room restores your health to full, plus hunger and thirst,
+    gradually over about 30 seconds.
 
     Innkeeper Bess Copperladle handles all check-ins.
     """
@@ -223,5 +187,4 @@ class CmdRentRoom(Command):
 
         # Start rest
         caller.db.is_resting = True
-        caller.cmdset.add("commands.command_rent.RestCmdSet")
         caller.scripts.add(RentScript)

@@ -16,6 +16,8 @@ Depends on:
 """
 
 from evennia.commands.command import Command
+from evennia.commands.cmdset import CmdSet
+from evennia import DefaultScript
 
 
 # ---------------------------------------------------------------------------
@@ -326,6 +328,79 @@ class CmdWimpy(Command):
 # rest
 # ---------------------------------------------------------------------------
 
+class RestScript(DefaultScript):
+    """
+    Rest for 6 seconds, then gain 5 HP. No messages until the end.
+    If interrupted, no healing.
+    """
+
+    REST_HP = 5
+
+    def at_script_creation(self):
+        self.key = "RestScript"
+        self.desc = "Resting to recover HP."
+        self.interval = 6
+        self.repeats = 1
+        self.persistent = False
+        self.db.warned = False
+
+    def at_repeat(self):
+        obj = self.obj
+        if not obj:
+            return
+        if hasattr(obj, "heal"):
+            obj.heal(self.REST_HP)
+        hp_now = obj.get_hp() if hasattr(obj, "get_hp") else "?"
+        hp_max = obj.get_hp_max() if hasattr(obj, "get_hp_max") else "?"
+        obj.msg(f"|gYou've rested and gained {self.REST_HP} HP.|n  |w({hp_now}/{hp_max} HP)|n")
+
+    def at_stop(self):
+        obj = self.obj
+        if obj:
+            obj.db.is_resting = False
+            obj.cmdset.remove("RestCmdSet")
+
+
+class CmdRestIntercept(Command):
+    """
+    Intercepts commands while resting. First attempt warns,
+    second attempt cancels rest and runs the command.
+    """
+
+    key = "_default"
+    locks = "cmd:all()"
+    help_category = "Combat"
+
+    def func(self):
+        caller = self.caller
+        scripts = caller.scripts.get("RestScript")
+        if not scripts:
+            caller.cmdset.remove("RestCmdSet")
+            caller.execute_cmd(self.raw_string)
+            return
+
+        script = scripts[0]
+        if script.db.warned:
+            script.stop()
+            caller.msg("|yYou stop resting without healing.|n")
+            caller.execute_cmd(self.raw_string)
+        else:
+            script.db.warned = True
+            caller.msg(
+                "|yIf you stop resting you will not heal.|n"
+                "  (type any command again to get up)"
+            )
+
+
+class RestCmdSet(CmdSet):
+    key = "RestCmdSet"
+    priority = 200
+    mergetype = "Replace"
+
+    def at_cmdset_creation(self):
+        self.add(CmdRestIntercept())
+
+
 class CmdRest(Command):
     """
     Rest to recover health.
@@ -333,9 +408,9 @@ class CmdRest(Command):
     Usage:
         rest
 
-    Resting restores your HP to full over a short time. You cannot
-    rest while in combat. Resting is interrupted if you enter combat
-    or move to another room.
+    Resting heals a small amount of HP over several seconds. You cannot
+    rest while in combat. Any command during rest will prompt a warning;
+    a second command will cancel the rest.
     """
 
     key = "rest"
@@ -357,6 +432,11 @@ class CmdRest(Command):
             caller.msg("You can't rest while in combat!")
             return
 
+        # Already resting?
+        if caller.scripts.get("RestScript"):
+            caller.msg("You're already resting.")
+            return
+
         # Check if already at full HP
         current_hp = caller.get_hp() if hasattr(caller, "get_hp") else 100
         max_hp = caller.get_hp_max() if hasattr(caller, "get_hp_max") else 100
@@ -365,19 +445,13 @@ class CmdRest(Command):
             caller.msg("You are already at full health.")
             return
 
-        # Heal to full
-        amount = max_hp - current_hp
-        if hasattr(caller, "heal"):
-            caller.heal(amount)
-
-        caller.msg(
-            f"|gYou sit down and rest for a moment...\n"
-            f"You feel refreshed. Health restored to {max_hp}/{max_hp}.|n"
-        )
         caller.location.msg_contents(
             f"|w{caller.name}|n sits down to rest.",
             exclude=[caller],
         )
+        caller.db.is_resting = True
+        caller.cmdset.add("commands.command_combat.RestCmdSet")
+        caller.scripts.add(RestScript)
 
 
 # ---------------------------------------------------------------------------

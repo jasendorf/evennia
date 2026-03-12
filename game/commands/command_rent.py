@@ -7,6 +7,9 @@ Rent room command
 Must be used at the Inn Counter (room tag: tavern_sw).
 Costs 20 copper. Starts a RentScript that slowly restores HP and needs.
 
+During rest, any command triggers a warning. A second command cancels
+the rest and executes the interrupted command.
+
 Innkeeper Bess Copperladle handles check-in and check-out messages.
 
 Depends on:
@@ -14,18 +17,62 @@ Depends on:
 """
 
 from evennia.commands.command import Command
+from evennia.commands.cmdset import CmdSet
 from evennia import DefaultScript
 from typeclasses.characters import format_money
 
 
 RENT_COST      = 20    # copper
-RENT_DURATION  = 60    # seconds of in-game rest
-RENT_HP        = 40    # HP restored over the full rest
+RENT_HP        = 5     # HP restored over the full rest
 RENT_HUNGER    = 30    # hunger restored over the full rest
-RENT_THIRST    = 30    # thirst restored over the full rest
+RENT_THIRST   = 30    # thirst restored over the full rest
 RENT_ROOM_TAG  = "tavern_sw"
-TICKS          = 6     # number of script repeats over RENT_DURATION
-TICK_INTERVAL  = RENT_DURATION // TICKS
+TICKS          = 6     # number of script repeats
+TICK_INTERVAL  = 1     # seconds between ticks (6 ticks = 6 seconds)
+HP_WELL_RESTED = 0.80  # 80% HP threshold for "well rested" prompt
+
+
+class CmdRestIntercept(Command):
+    """
+    Intercepts commands while resting. First attempt warns,
+    second attempt cancels rest and runs the command.
+    """
+
+    key = "_default"
+    locks = "cmd:all()"
+    help_category = "General"
+
+    def func(self):
+        caller = self.caller
+        scripts = caller.scripts.get("RentScript")
+        if not scripts:
+            # Rest already ended, just run the command normally
+            caller.cmdset.remove("RestCmdSet")
+            caller.execute_cmd(self.raw_string)
+            return
+
+        script = scripts[0]
+        if script.db.warned:
+            # Second attempt — cancel rest and run the command
+            script.stop()
+            caller.msg("|yYou get up early, interrupting your rest.|n")
+            caller.execute_cmd(self.raw_string)
+        else:
+            # First attempt — warn
+            script.db.warned = True
+            caller.msg(
+                "|yYou stir restlessly. If you get up now you won't "
+                "finish healing.|n  (type any command again to get up)"
+            )
+
+
+class RestCmdSet(CmdSet):
+    key = "RestCmdSet"
+    priority = 200
+    mergetype = "Replace"
+
+    def at_cmdset_creation(self):
+        self.add(CmdRestIntercept())
 
 
 class RentScript(DefaultScript):
@@ -51,6 +98,7 @@ class RentScript(DefaultScript):
         self.repeats = TICKS
         self.persistent = False
         self.db.tick_count = 0
+        self.db.warned = False
 
     def at_repeat(self):
         obj = self.obj
@@ -61,9 +109,9 @@ class RentScript(DefaultScript):
         tick = self.db.tick_count or 0
 
         # Restore a portion each tick
-        hp_per_tick      = RENT_HP     // TICKS
-        hunger_per_tick  = RENT_HUNGER // TICKS
-        thirst_per_tick  = RENT_THIRST // TICKS
+        hp_per_tick = max(1, RENT_HP // TICKS)
+        hunger_per_tick = RENT_HUNGER // TICKS
+        thirst_per_tick = RENT_THIRST // TICKS
 
         if hasattr(obj, "heal"):
             obj.heal(hp_per_tick)
@@ -82,6 +130,7 @@ class RentScript(DefaultScript):
         obj = self.obj
         if obj:
             obj.db.is_resting = False
+            obj.cmdset.remove("RestCmdSet")
 
 
 class CmdRentRoom(Command):
@@ -94,8 +143,8 @@ class CmdRentRoom(Command):
     Cost: 20 copper. Must be at the Inn Counter (inside the Hearthstone Inn).
 
     Renting a room restores your health, hunger, and thirst gradually
-    over one minute of real time. You can move around while resting
-    but leaving the inn area will interrupt your rest.
+    over about 6 seconds. Any command during rest will prompt a warning;
+    a second command will cancel the rest early.
 
     Innkeeper Bess Copperladle handles all check-ins.
     """
@@ -121,17 +170,38 @@ class CmdRentRoom(Command):
             caller.msg("You're already resting. Give it a moment.")
             return
 
+        # Check for pending confirmation (well-rested prompt)
+        if caller.ndb._rent_confirm:
+            caller.ndb._rent_confirm = False
+            self._do_rent(caller)
+            return
+
         # Check funds
         copper = caller.db.copper or 0
         if copper < RENT_COST:
             caller.msg(
-                f"Bess shakes her head. 'A night's rest costs {format_money(RENT_COST)}, "
+                f"|cBess|n shakes her head. 'A night's rest costs {format_money(RENT_COST)}, "
                 f"love. You've only got {format_money(copper)}.'"
             )
             return
 
-        # Take payment
-        caller.spend_copper(RENT_COST)
+        # Well-rested check (80%+ HP)
+        current_hp = caller.get_hp()
+        max_hp = caller.get_hp_max()
+        if max_hp > 0 and current_hp / max_hp >= HP_WELL_RESTED:
+            caller.ndb._rent_confirm = True
+            caller.msg(
+                f"|cBess|n looks you over. 'You look fairly well rested, "
+                f"love. Are you sure? It's {format_money(RENT_COST)}.'\n"
+                f"  (type |wrent|n again to confirm)"
+            )
+            return
+
+        self._do_rent(caller)
+
+    def _do_rent(self, caller):
+        """Take payment and start the rest."""
+        caller.spend_money(RENT_COST)
 
         # Find Bess and have her speak
         bess = None
@@ -151,6 +221,7 @@ class CmdRentRoom(Command):
                 f"'Room three, top of the stairs.'"
             )
 
-        # Start rest script
+        # Start rest
         caller.db.is_resting = True
+        caller.cmdset.add("commands.command_rent.RestCmdSet")
         caller.scripts.add(RentScript)

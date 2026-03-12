@@ -80,6 +80,27 @@ from contrib_dorfin.dorfin_party import DorfinPartyMixin
 # Configuration
 # ---------------------------------------------------------------------------
 
+COPPER_PER_SILVER = 100
+COPPER_PER_GOLD = 10000
+
+
+def format_money(total_copper):
+    """Format a copper amount as gold/silver/copper string (e.g. '2g 50s 10c')."""
+    if total_copper <= 0:
+        return "0c"
+    gold = total_copper // COPPER_PER_GOLD
+    silver = (total_copper % COPPER_PER_GOLD) // COPPER_PER_SILVER
+    copper = total_copper % COPPER_PER_SILVER
+    parts = []
+    if gold:
+        parts.append(f"{gold}g")
+    if silver:
+        parts.append(f"{silver}s")
+    if copper or not parts:
+        parts.append(f"{copper}c")
+    return " ".join(parts)
+
+
 XP_DEATH_PENALTY = 0.10   # lose 10% of XP on death
 RESPAWN_HP_RATIO = 0.25   # respawn with 25% of max HP
 RESPAWN_ROOM_TAG = "temple_nw"   # tag on the room to respawn in
@@ -434,25 +455,33 @@ class AwtownCharacter(DorfinPartyMixin, DorfinNeedsMixin, ClothedCharacter):
     # Currency helpers
     # ------------------------------------------------------------------
 
-    def give_copper(self, amount):
-        """Add copper to this character's wallet."""
+    def money_string(self):
+        """Return this character's purse formatted as gold/silver/copper."""
+        return format_money(self.db.copper or 0)
+
+    def give_money(self, amount):
+        """Add copper to this character's purse."""
         self.db.copper = (self.db.copper or 0) + amount
 
-    def spend_copper(self, amount):
+    give_copper = give_money  # alias
+
+    def spend_money(self, amount):
         """
         Deduct copper. Returns True on success, False if insufficient funds.
 
         Args:
-            amount (int): Amount to spend.
+            amount (int): Amount in copper to spend.
 
         Returns:
-            bool: True if the character had enough copper.
+            bool: True if the character had enough funds.
         """
         current = self.db.copper or 0
         if current < amount:
             return False
         self.db.copper = current - amount
         return True
+
+    spend_copper = spend_money  # alias
 
     # ------------------------------------------------------------------
     # Equipment helpers

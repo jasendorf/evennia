@@ -596,7 +596,7 @@ def _format_stat_table(wip_stats, base_stats):
         base = base_stats[s]
         alloc = wip_stats[s] - base
         total = wip_stats[s]
-        alloc_str = f"|g+{alloc}|n" if alloc > 0 else f"|r{alloc}|n" if alloc < 0 else "  -"
+        alloc_str = f"|g{alloc:>+4}|n" if alloc else "   -"
         # Alternate rows: dim background on odd rows
         if i % 2 == 1:
             lines.append(f"  |x{BASE_STATS[s]['abbr']:<5} {base:>4}  {alloc_str}|x  {total:>5}|n")
@@ -963,10 +963,10 @@ def menunode_stats(caller, raw_string="", **kwargs):
     )
 
     text = (
-        "|wAllocate Your Stats|n  (rolled 3d6 + racial mods)\n\n"
-        f"  |wstat = value|n to set   |wreroll|n   |wreset|n   |wback|n   |wdone|n   |whelp|n\n"
+        "|wAllocate Your Stats|n  (rolled 3d6 + racial mods)\n"
         f"  Min: {STAT_MIN}  |  Max: {STAT_MAX}  |  Bonus points: {BONUS_POINTS}\n\n"
-        f"{stat_table}"
+        f"{stat_table}\n\n"
+        f"  |wstat = value|n to set   |wreroll|n   |wreset|n   |wback|n   |wdone|n   |whelp|n"
     )
 
     options = {"key": "_default", "goto": _handle_stat_input}
@@ -980,6 +980,19 @@ def _handle_stat_input(caller, raw_string, **kwargs):
     base = char.db.base_stats
     wip = char.db.wip_stats
     cmd = raw_string.strip().lower()
+
+    if cmd in ("help", "h", "?"):
+        lines = ["|wStat Descriptions|n\n"]
+        for s in STAT_KEYS:
+            sdata = BASE_STATS[s]
+            lines.append(f"  |w{sdata['abbr']:<4}|n {sdata['name']:<14} {sdata['desc']}")
+        lines.append("")
+        lines.append("|wConfusing pairs:|n")
+        lines.append("  |wDEX|n vs |wAGI|n: DEX = precision (aim, fingers). AGI = movement (speed, dodge).")
+        lines.append("  |wCON|n vs |wEND|n: CON = absorb punishment. END = keep going longer.")
+        lines.append("  |wWIS|n vs |wPER|n: WIS = inner insight (magic, willpower). PER = outward awareness.")
+        caller.msg("\n".join(lines))
+        return "menunode_stats"
 
     if cmd in ("done", "d"):
         spent = _calc_points_spent(wip, base)
@@ -1171,6 +1184,12 @@ def menunode_end(caller, raw_string="", **kwargs):
             char.db.prelogout_location = start_rooms[0]
     except Exception:
         pass
+
+    # Start with full hunger, thirst, and some copper
+    if hasattr(char, "needs"):
+        char.needs.set("hunger", 100)
+        char.needs.set("thirst", 100)
+    char.db.copper = 100
 
     # Clean up work-in-progress data
     char.attributes.remove("base_stats")

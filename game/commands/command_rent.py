@@ -15,6 +15,7 @@ Depends on:
 
 from evennia.commands.command import Command
 from evennia import DefaultScript
+from typeclasses.characters import format_money
 
 
 RENT_COST      = 20    # copper
@@ -108,7 +109,7 @@ class CmdRentRoom(Command):
         caller = self.caller
 
         # Must be at the Inn Counter
-        if not caller.location or not caller.location.tags.get(RENT_ROOM_TAG, category="awtown_room"):
+        if not caller.location or not caller.location.tags.get(RENT_ROOM_TAG, category="awtown_dbkey"):
             caller.msg(
                 "You need to be at the Inn Counter inside the Hearthstone Inn.\n"
                 "Find Innkeeper Bess Copperladle to rent a room."
@@ -124,8 +125,8 @@ class CmdRentRoom(Command):
         copper = caller.db.copper or 0
         if copper < RENT_COST:
             caller.msg(
-                f"Bess shakes her head. 'A night's rest costs {RENT_COST} copper, "
-                f"love. You've only got {copper}.'"
+                f"Bess shakes her head. 'A night's rest costs {format_money(RENT_COST)}, "
+                f"love. You've only got {format_money(copper)}.'"
             )
             return
 
@@ -146,7 +147,7 @@ class CmdRentRoom(Command):
             )
         else:
             caller.msg(
-                f"You pay {RENT_COST} copper and receive a brass key. "
+                f"You pay {format_money(RENT_COST)} and receive a brass key. "
                 f"'Room three, top of the stairs.'"
             )
 

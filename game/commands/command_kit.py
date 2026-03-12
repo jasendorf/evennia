@@ -318,7 +318,7 @@ class CmdClaimKit(Command):
             _create_item(data, caller)
 
         # Give starting copper
-        caller.db.copper = (caller.db.copper or 0) + 50
+        caller.give_money(50)
 
         # Mark as claimed
         caller.db.kit_claimed = True

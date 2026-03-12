@@ -143,6 +143,7 @@ def menunode_charselect(caller, raw_string="", **kwargs):
         f"  |wCommands:|n\n"
         f"    |wplay <name or #>|n    -- enter the game\n"
         f"    |wcreate|n              -- create a new character\n"
+        f"    |wdelete <name or #>|n  -- delete a character\n"
         f"    |wwho|n                 -- see who's online\n"
         f"    |wquit|n                -- disconnect\n"
     )
@@ -185,12 +186,9 @@ def _parse_input(caller, raw_string, session=None, **kwargs):
     if action in ("quit", "q", "logout"):
         return _do_quit(account, session)
 
-    # --- delete (future) ---
+    # --- delete ---
     if action in ("delete", "del"):
-        return "menunode_charselect", {
-            "session": session,
-            "error": "Character deletion is not yet available.",
-        }
+        return _do_delete(account, arg, characters, session)
 
     return "menunode_charselect", {
         "session": session,
@@ -324,6 +322,185 @@ def _do_who(caller, session):
         caller.msg("|wNo one else is online.|n")
 
     return "menunode_charselect", {"session": session}
+
+
+def _do_delete(account, arg, characters, session):
+    """Start the character deletion flow."""
+    if not characters:
+        return "menunode_charselect", {
+            "session": session,
+            "error": "You have no characters to delete.",
+        }
+
+    if not arg:
+        return "menunode_charselect", {
+            "session": session,
+            "error": "Specify a character name or number to delete.",
+        }
+
+    target = None
+    try:
+        idx = int(arg) - 1
+        if 0 <= idx < len(characters):
+            target = characters[idx]
+    except ValueError:
+        pass
+
+    if not target:
+        for c in characters:
+            if c.key.lower() == arg.lower():
+                target = c
+                break
+
+    if not target:
+        return "menunode_charselect", {
+            "session": session,
+            "error": f"No character matching '{arg}' found.",
+        }
+
+    return "menunode_delete_confirm1", {
+        "session": session,
+        "char_id": target.id,
+        "char_name": target.key,
+    }
+
+
+def menunode_delete_confirm1(caller, raw_string="", **kwargs):
+    """First deletion warning."""
+    char_name = kwargs.get("char_name", "???")
+    session = kwargs.get("session")
+
+    text = (
+        f"|r=====================================\n"
+        f"  WARNING: Character Deletion\n"
+        f"=====================================|n\n"
+        f"\n"
+        f"  You are about to delete |w{char_name}|n.\n"
+        f"\n"
+        f"  |rThis character will be permanently destroyed.|n\n"
+        f"  All progress, items, and achievements will be lost.\n"
+        f"\n"
+        f"  Type |wyes|n to continue or |wno|n to cancel.\n"
+    )
+
+    options = {
+        "key": "_default",
+        "goto": (_parse_delete1, {
+            "session": session,
+            "char_id": kwargs.get("char_id"),
+            "char_name": char_name,
+        }),
+    }
+    return text, options
+
+
+def _parse_delete1(caller, raw_string, session=None, char_id=None, char_name=None, **kwargs):
+    cmd = raw_string.strip().lower()
+    if cmd in ("yes", "y"):
+        return "menunode_delete_confirm2", {
+            "session": session,
+            "char_id": char_id,
+            "char_name": char_name,
+        }
+    return "menunode_charselect", {"session": session}
+
+
+def menunode_delete_confirm2(caller, raw_string="", **kwargs):
+    """Second deletion warning."""
+    char_name = kwargs.get("char_name", "???")
+    session = kwargs.get("session")
+
+    text = (
+        f"|r=====================================\n"
+        f"  ARE YOU SURE?\n"
+        f"=====================================|n\n"
+        f"\n"
+        f"  |w{char_name}|n will be |rpermanently deleted|n.\n"
+        f"  |rThere is no way to undo this.|n\n"
+        f"\n"
+        f"  Type the character's name (|w{char_name}|n) to confirm,\n"
+        f"  or anything else to cancel.\n"
+    )
+
+    options = {
+        "key": "_default",
+        "goto": (_parse_delete2, {
+            "session": session,
+            "char_id": kwargs.get("char_id"),
+            "char_name": char_name,
+        }),
+    }
+    return text, options
+
+
+def _parse_delete2(caller, raw_string, session=None, char_id=None, char_name=None, **kwargs):
+    cmd = raw_string.strip()
+    if cmd.lower() == char_name.lower():
+        return "menunode_delete_confirm3", {
+            "session": session,
+            "char_id": char_id,
+            "char_name": char_name,
+        }
+    return "menunode_charselect", {
+        "session": session,
+        "error": "Deletion cancelled.",
+    }
+
+
+def menunode_delete_confirm3(caller, raw_string="", **kwargs):
+    """Final deletion warning."""
+    char_name = kwargs.get("char_name", "???")
+    session = kwargs.get("session")
+
+    text = (
+        f"|r=====================================\n"
+        f"  FINAL WARNING\n"
+        f"=====================================|n\n"
+        f"\n"
+        f"  This is your |rlast chance|n. |w{char_name}|n will be\n"
+        f"  |rpermanently erased from existence|n.\n"
+        f"\n"
+        f"  Type |wDELETE|n to destroy this character forever,\n"
+        f"  or anything else to cancel.\n"
+    )
+
+    options = {
+        "key": "_default",
+        "goto": (_parse_delete3, {
+            "session": session,
+            "char_id": kwargs.get("char_id"),
+            "char_name": char_name,
+        }),
+    }
+    return text, options
+
+
+def _parse_delete3(caller, raw_string, session=None, char_id=None, char_name=None, **kwargs):
+    cmd = raw_string.strip()
+    if cmd == "DELETE":
+        account = caller
+        # Find and delete the character
+        char = None
+        for c in account.characters.all():
+            if c and c.id == char_id:
+                char = c
+                break
+        if char:
+            char_key = char.key
+            account.characters.remove(char)
+            char.delete()
+            return "menunode_charselect", {
+                "session": session,
+                "error": f"|g{char_key} has been deleted.|n",
+            }
+        return "menunode_charselect", {
+            "session": session,
+            "error": "Character not found — it may have already been deleted.",
+        }
+    return "menunode_charselect", {
+        "session": session,
+        "error": "Deletion cancelled.",
+    }
 
 
 def _do_quit(account, session):

@@ -89,6 +89,8 @@ except ImportError:
 # Ground decay -- items left on the ground vanish over time
 from contrib.ground_decay.ground_decay import GroundDecayMixin
 
+from typeclasses.characters import format_money
+
 
 # ---------------------------------------------------------------------------
 # AwtownItem -- base
@@ -123,7 +125,7 @@ class AwtownItem(GroundDecayMixin, DefaultObject):
     def return_appearance(self, looker, **kwargs):
         desc = self.db.desc or "You see nothing remarkable about it."
         value = self.db.value or 0
-        return f"|w{self.key}|n\n{desc}\n|yValue: {value} copper|n"
+        return f"|w{self.key}|n\n{desc}\n|yValue: {format_money(value)}|n"
 
 
 # ---------------------------------------------------------------------------
@@ -199,7 +201,7 @@ class AwtownClothing(GroundDecayMixin, ContribClothing):
                 sign = "+" if val >= 0 else ""
                 mod_parts.append(f"{stat} {sign}{val}")
             lines.append("|cStats: " + ", ".join(mod_parts) + "|n")
-        lines.append(f"|yValue: {value} copper|n")
+        lines.append(f"|yValue: {format_money(value)}|n")
         return "\n".join(lines)
 
 
@@ -238,7 +240,7 @@ class AwtownWeapon(AwtownItem):
             f"|w{self.key}|n",
             desc,
             f"|cDamage: {dice}{bonus_str}|n",
-            f"|yValue: {value} copper|n",
+            f"|yValue: {format_money(value)}|n",
         ]
         return "\n".join(lines)
 
@@ -285,7 +287,7 @@ class AwtownConsumable(AwtownItem):
             details.append(f"Health: +{self.db.hp_restore}")
         if details:
             lines.append("|c" + "  ".join(details) + "|n")
-        lines.append(f"|yValue: {value} copper|n")
+        lines.append(f"|yValue: {format_money(value)}|n")
         return "\n".join(lines)
 
 
@@ -403,7 +405,7 @@ class AwtownDrinkable(AwtownItem):
         lines = [f"|w{self.key}|n", desc, f"  Status: {fill}"]
         if self.db.hydration_per:
             lines.append(f"  |cThirst per sip: +{self.db.hydration_per}|n")
-        lines.append(f"|yValue: {value} copper|n")
+        lines.append(f"|yValue: {format_money(value)}|n")
         return "\n".join(lines)
 
 
@@ -481,7 +483,7 @@ class AwtownContainer(GroundDecayMixin, ContribContainer if _CONTAINERS_AVAILABL
         else:
             lines.append("\n|xEmpty.|n")
 
-        lines.append(f"|yValue: {value} copper|n")
+        lines.append(f"|yValue: {format_money(value)}|n")
         return "\n".join(lines)
 
 

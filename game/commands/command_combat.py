@@ -540,8 +540,7 @@ class CmdScore(Command):
         lines.append(f"  XP:      |w{xp}|n")
 
         # Currency
-        copper = caller.db.copper or 0
-        lines.append(f"  Copper:  |y{copper}|n")
+        lines.append(f"  Purse:   |y{caller.money_string()}|n")
 
         # Stats
         lines.append(f"\n|w  {'--- Stats ---':^46}|n")

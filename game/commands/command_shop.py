@@ -14,6 +14,7 @@ Usage:
 
 from evennia.commands.command import Command
 from evennia import create_object
+from typeclasses.characters import format_money
 from typeclasses.npcs import AwtownNPC
 
 
@@ -77,7 +78,7 @@ class CmdList(Command):
         for item in inventory:
             name = item.get("name", "???")
             price = item.get("price", 0)
-            lines.append(f"  {name:<30} {price:>7} cp")
+            lines.append(f"  {name:<30} {format_money(price):>10}")
         lines.append("\nType |wbuy <item name>|n to purchase.")
         caller.msg("\n".join(lines))
 
@@ -140,13 +141,13 @@ class CmdBuy(Command):
 
         if purse < price:
             caller.msg(
-                f"|r{merchant.name} says, \"|wThat'll be {price} copper. "
-                f"You're {price - purse} short.\"|n"
+                f"|r{merchant.name} says, \"|wThat'll be {format_money(price)}. "
+                f"You're {format_money(price - purse)} short.\"|n"
             )
             return
 
         # Deduct cost
-        caller.db.copper = purse - price
+        caller.spend_money(price)
 
         # Create the item in the caller's inventory
         proto_key = match.get("key")
@@ -160,7 +161,7 @@ class CmdBuy(Command):
                 if objs:
                     objs[0].move_to(caller, quiet=True)
                     caller.msg(
-                        f"|g{merchant.name} hands you |w{item_name}|g for {price} copper.|n"
+                        f"|g{merchant.name} hands you |w{item_name}|g for {format_money(price)}.|n"
                     )
                     return
             except Exception:
@@ -171,7 +172,7 @@ class CmdBuy(Command):
         from evennia.objects.objects import DefaultObject
         obj = create_object(DefaultObject, key=item_name, location=caller)
         obj.db.desc = item_desc
-        caller.msg(f"|g{merchant.name} hands you |w{item_name}|g for {price} copper.|n")
+        caller.msg(f"|g{merchant.name} hands you |w{item_name}|g for {format_money(price)}.|n")
 
 
 class CmdSell(Command):
@@ -217,8 +218,8 @@ class CmdSell(Command):
         base_value = match.db.value or 2
         sell_price = max(1, base_value // 2)
 
-        caller.db.copper = (caller.db.copper or 0) + sell_price
+        caller.give_money(sell_price)
         match.delete()
         caller.msg(
-            f"|g{merchant.name} takes your |w{match.name}|g and pays you {sell_price} copper.|n"
+            f"|g{merchant.name} takes your |w{match.name}|g and pays you {format_money(sell_price)}.|n"
         )

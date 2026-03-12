@@ -101,19 +101,19 @@ menunode_welcome
 menunode_choose_name  ← validate: 3-20 chars, alpha only, unique
     │
     ▼
-menunode_race_list    ← 12 starter races + 8 locked
+menunode_race_list    ← 12 starter races (+ unlocked hidden races)
     │
     ▼
 menunode_race_detail  ← desc, stat mods, languages, traits → confirm
     │
     ▼
-menunode_class_list   ← 24 classes in 3 categories
+menunode_class_list   ← 26 classes in 3 categories
     │
     ▼
 menunode_class_detail ← desc → confirm
     │
     ▼
-menunode_stats        ← fieldfill-style: "str = 14", "reset", "done"
+menunode_stats        ← 3d6 rolls + racial mods, "reroll", "str = 14", "reset", "done"
     │
     ▼
 menunode_summary      ← full sheet → confirm / back / restart
@@ -159,22 +159,23 @@ If a player disconnects mid-chargen:
 
 | Race | Stat Mods | Languages | Racial Trait |
 |---|---|---|---|
-| Human | STR+1, CON+1, CHA+1 | Common | Fast learner: +10% XP gain |
-| Elf | DEX+2, INT+1, CON-1 | Common, Elvish | Keen senses: Perception bonus in forests |
-| Dwarf | CON+2, STR+1, AGI-1 | Common, Dwarvish | Stone-hearted: poison resistance |
-| Halfling | AGI+2, LCK+1, STR-1 | Common, Halfling | Lucky: reroll one crit fail/day |
-| Gnome | INT+2, DEX+1, STR-1 | Common, Dwarvish | Tinker's mind: crafting bonus |
-| Half-Elf | CHA+2, PER+1, CON-1 | Common, Elvish | Diplomatic: Persuasion bonus |
-| Half-Orc | STR+2, END+1, CHA-1 | Common, Orcish | Savage strikes: crit damage bonus |
-| Orc | STR+2, CON+1, INT-1 | Common, Orcish | Battle fury: bonus damage below 25% HP |
-| Goblin | AGI+2, PER+1, STR-1 | Common, Goblin | Scavenger: extra loot |
-| Troll | CON+2, STR+1, DEX-1 | Common, Giant | Regeneration: HP regen out of combat |
-| Hobgoblin | END+2, WIS+1, CHA-1 | Common, Goblin, Orcish | Tactical mind: initiative bonus |
-| Lizardfolk | CON+2, PER+1, CHA-1 | Common, Draconic | Natural armor: +2 base armor |
+| Human | STR+1, CON+1, CHA+1, LCK+1 | Common | Fast learner: +10% XP gain |
+| Elf | DEX+2, INT+2, PER+1, AGI+1, CON-2, STR-2 | Common, Elvish | Keen senses: Perception bonus in forests |
+| Dwarf | CON+3, STR+2, END+1, AGI-2, CHA-1, DEX-1 | Common, Dwarvish | Stone-hearted: poison resistance |
+| Halfling | AGI+2, LCK+3, DEX+1, CHA+1, STR-3, CON-2 | Common, Halfling | Lucky: reroll one crit fail/day |
+| Gnome | INT+3, DEX+2, PER+1, STR-2, CON-1, END-1 | Common, Dwarvish | Tinker's mind: crafting bonus |
+| Half-Elf | CHA+2, PER+1, DEX+1, INT+1, CON-1, STR-1 | Common, Elvish | Diplomatic: Persuasion bonus |
+| Half-Orc | STR+3, END+2, CON+1, INT-2, CHA-2, PER-1 | Common, Orcish | Savage strikes: crit damage bonus |
+| Orc | STR+3, CON+2, END+2, INT-3, CHA-2, DEX-1, WIS-1 | Common, Orcish | Battle fury: bonus damage below 25% HP |
+| Goblin | AGI+3, PER+2, LCK+1, STR-3, CON-1, CHA-2 | Common, Goblin | Scavenger: extra loot |
+| Troll | CON+3, STR+3, END+2, DEX-3, AGI-2, INT-2, CHA-1 | Common, Giant | Regeneration: HP regen out of combat |
+| Hobgoblin | END+3, STR+1, WIS+2, CON+1, CHA-3, LCK-2 | Common, Goblin, Orcish | Tactical mind: initiative bonus |
+| Lizardfolk | CON+3, PER+2, STR+1, CHA-3, INT-1, LCK-1 | Common, Draconic | Natural armor: +2 base armor |
 
-### 8 Unlockable Races
+### 8 Unlockable Races (Hidden)
 
-Shown as locked in chargen with unlock hints:
+Not shown in chargen until unlocked. Stored in `account.db.unlocked_races`.
+Only the specific unlocked race appears in that player's race list.
 
 - Dragonborn (level 20), Tabaxi (50 rooms), Kenku (5 languages),
   Goliath (solo boss), Firbolg (Herbalism), Changeling (Shadow Chamber quest),
@@ -182,24 +183,24 @@ Shown as locked in chargen with unlock hints:
 
 ---
 
-## Classes (24)
+## Classes (26)
 
-### Martial (8)
-Warrior, Paladin, Ranger, Barbarian, Knight, Monk, Samurai, Swashbuckler
+### Martial (9)
+Warrior, Paladin, Ranger, Barbarian, Knight, Monk, Archer, Hunter, Swashbuckler
 
 ### Magic (9)
 Mage, Wizard, Sorcerer, Warlock, Necromancer, Illusionist, Elementalist,
 Druid, Shaman
 
-### Stealth & Support (7)
+### Stealth & Support (8)
 Rogue, Thief, Assassin, Bard, Cleric, Healer, Scout, Tinkerer
 
 ---
 
 ## Stats
 
-10 stats, all base 10. Racial mods applied first, then 15 bonus points
-to allocate freely.
+10 stats, each rolled 3d6. Racial mods applied to rolls, then 15 bonus
+points to allocate on top. Players can reroll until satisfied.
 
 | Stat | Abbr | Description |
 |---|---|---|
@@ -219,7 +220,7 @@ to allocate freely.
 - Min: 3 per stat (after all mods)
 - Max: 20 per stat at creation
 - Bonus points: 15 to distribute freely
-- Input syntax: `str = 14`, `reset`, `done`
+- Input syntax: `str = 14`, `reroll`, `reset`, `back`, `done`
 
 ### Stat Split Explanations
 
@@ -238,7 +239,8 @@ to allocate freely.
 | `db.char_class` | `"ranger"` | Class confirmed |
 | `db.char_class_name` | `"Ranger"` | Class confirmed |
 | `db.languages` | `{"common": 1.0, "elvish": 1.0}` | menunode_end |
-| `db.wip_stats` | `{"str": 12, ...}` | During stat allocation (removed at end) |
+| `db.base_stats` | `{"str": 11, ...}` | During stat allocation (removed at end) |
+| `db.wip_stats` | `{"str": 14, ...}` | During stat allocation (removed at end) |
 | `traits[stat].base` | Modified values | menunode_end |
 | `db.chargen_step` | `"menunode_stats"` | Each node (removed at end) |
 
@@ -270,7 +272,7 @@ moved there when first puppeted.
 - Admin/Builder only
 - Without args: runs on your current puppet
 - With args: targets named character
-- Resets race, class, stats (to base 10), and languages
+- Resets race, class, stats (base rolls + allocations), and languages
 - Starts chargen at the race step (skips name — character keeps its name)
 
 ---

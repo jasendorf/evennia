@@ -378,12 +378,22 @@ CLASSES = {
             "Fast, precise, and deadly without a weapon."
         ),
     },
-    "samurai": {
-        "name": "Samurai",
+    "archer": {
+        "name": "Archer",
         "category": "Martial",
         "desc": (
-            "Precision swordsmen bound by a warrior's honor. They specialize in "
-            "devastating burst damage and single-combat duels."
+            "Masters of the bow who strike from a distance with deadly precision. "
+            "Archers control the battlefield with sustained ranged damage, trick shots, "
+            "and the ability to pin down enemies before they close the gap."
+        ),
+    },
+    "hunter": {
+        "name": "Hunter",
+        "category": "Martial",
+        "desc": (
+            "Patient stalkers who combine ranged attacks with traps and animal companions. "
+            "Hunters track their prey across any terrain and strike when the moment is right. "
+            "Their bond with a beast companion makes them a two-front threat."
         ),
     },
     "swashbuckler": {
@@ -881,7 +891,7 @@ def _select_class(caller, raw_string, **kwargs):
         if choice in (ckey, cdata["name"].lower()):
             return "menunode_class_detail", {"selected_class": ckey}
 
-    caller.msg("|rInvalid choice.|n Enter a number (1-24) or class name.")
+    caller.msg(f"|rInvalid choice.|n Enter a number (1-{len(_CLASS_LIST)}) or class name.")
     return "menunode_class_list"
 
 

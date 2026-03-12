@@ -6,8 +6,11 @@ Combat commands
     flee                     -- attempt to escape combat
     consider/con <target>    -- gauge a mob's difficulty
     wimpy <hp>               -- set auto-flee threshold (0 to disable)
-    rest                     -- recover HP outside of combat
     score/stats              -- show character stats, HP, XP
+    loot                     -- take items from a corpse
+
+Rest and recovery commands are in command_rest.py (CmdRest) and
+command_rent.py (CmdRentRoom). They are intentionally separate systems.
 
 Depends on:
     contrib_dorfin.combat_handler.CombatHandler
@@ -16,8 +19,6 @@ Depends on:
 """
 
 from evennia.commands.command import Command
-from evennia.commands.cmdset import CmdSet
-from evennia import DefaultScript
 
 
 # ---------------------------------------------------------------------------
@@ -76,7 +77,6 @@ class CmdKill(Command):
 
         # Must be a mob
         if not getattr(target.db, "is_mob", False):
-            # Check if it's an NPC
             if getattr(target.db, "is_npc", False):
                 caller.msg(
                     f"You can't attack {target.get_display_name(caller)}. "
@@ -126,15 +126,11 @@ class CmdKill(Command):
                 exclude=[caller],
             )
 
-        # Trigger autoassist for party members (hook for Chunk 6)
+        # Trigger autoassist for party members
         _trigger_party_autoassist(caller, target, handler)
 
 
 def _trigger_party_autoassist(attacker, target, handler):
-    """
-    Check if the attacker is in a party and trigger autoassist for
-    nearby party members who have it enabled.
-    """
     try:
         from contrib_dorfin.dorfin_party import trigger_party_autoassist
         trigger_party_autoassist(attacker, target, handler)
@@ -168,7 +164,6 @@ class CmdFlee(Command):
     def func(self):
         caller = self.caller
 
-        # Must be in combat
         from contrib_dorfin.combat_handler import CombatHandler
         handler = CombatHandler.get_handler(caller.location)
 
@@ -176,7 +171,6 @@ class CmdFlee(Command):
             caller.msg("You're not in combat.")
             return
 
-        # Roll flee check
         from contrib_dorfin.combat_rules import check_flee
         opponents = handler.get_opponents(caller)
         result = check_flee(caller, opponents)
@@ -187,14 +181,12 @@ class CmdFlee(Command):
                 f"|y{caller.name} flees from combat!|n",
                 exclude=[caller],
             )
-            # Collect mob opponents before removing from combat (for chase)
             mob_opponents = [
                 opp for opp in opponents
                 if hasattr(opp, "db") and getattr(opp.db, "is_mob", False)
             ]
             handler.remove_combatant(caller)
             exit_used = handler._move_to_random_exit(caller)
-            # Trigger chase for mob opponents
             if exit_used:
                 try:
                     from contrib_dorfin.mob_movement import trigger_chase
@@ -243,7 +235,7 @@ class CmdConsider(Command):
         args = self.args.strip()
 
         if not args:
-            caller.msg("Consider what? Usage: consider <target>")
+            caller.msg("Consider whom? Usage: consider <target>")
             return
 
         target = caller.search(args, location=caller.location, quiet=True)
@@ -254,9 +246,14 @@ class CmdConsider(Command):
             mobs = [t for t in target if getattr(t.db, "is_mob", False)]
             target = mobs[0] if mobs else target[0]
 
-        from contrib_dorfin.combat_rules import get_consider_message
-        message = get_consider_message(caller, target)
-        caller.msg(f"|c{message}|n")
+        if not getattr(target.db, "is_mob", False):
+            caller.msg("You can only consider mobs.")
+            return
+
+        from contrib_dorfin.combat_rules import consider_difficulty
+        result = consider_difficulty(caller, target)
+        target_name = target.get_display_name(caller)
+        caller.msg(f"You size up {target_name}: |w{result}|n")
 
 
 # ---------------------------------------------------------------------------
@@ -270,17 +267,13 @@ class CmdWimpy(Command):
     Usage:
         wimpy <hp>
         wimpy 0
-        wimpy
 
-    When your HP drops to or below your wimpy threshold during combat,
-    you will automatically attempt to flee. Set to 0 to disable.
+    When your HP drops to or below this value in combat, you will
+    automatically attempt to flee. Set to 0 to disable.
 
-    Without arguments, shows your current wimpy setting.
-
-    Examples:
-        wimpy 30       -- auto-flee when HP drops to 30
-        wimpy 0        -- disable auto-flee
-        wimpy          -- check current setting
+    Example:
+        wimpy 15    -- flee when HP reaches 15
+        wimpy 0     -- never auto-flee
     """
 
     key = "wimpy"
@@ -293,16 +286,16 @@ class CmdWimpy(Command):
 
         if not args:
             current = caller.db.wimpy or 0
-            if current > 0:
-                caller.msg(f"|wWimpy:|n {current} HP (auto-flee when HP drops to {current})")
+            if current:
+                caller.msg(f"Wimpy is set to |w{current} HP|n.")
             else:
-                caller.msg("|wWimpy:|n disabled")
+                caller.msg("Wimpy is disabled.")
             return
 
         try:
             value = int(args)
         except ValueError:
-            caller.msg("Wimpy must be a number. Usage: wimpy <hp>")
+            caller.msg("Usage: wimpy <hp>")
             return
 
         if value < 0:
@@ -322,136 +315,6 @@ class CmdWimpy(Command):
             caller.msg(f"|gWimpy set to {value} HP.|n You will auto-flee at {value} HP.")
         else:
             caller.msg("|yWimpy disabled.|n You will not auto-flee.")
-
-
-# ---------------------------------------------------------------------------
-# rest
-# ---------------------------------------------------------------------------
-
-class RestScript(DefaultScript):
-    """
-    Rest for 6 seconds, then gain 5 HP. No messages until the end.
-    If interrupted, no healing.
-    """
-
-    REST_HP = 5
-
-    def at_script_creation(self):
-        self.key = "RestScript"
-        self.desc = "Resting to recover HP."
-        self.interval = 6
-        self.repeats = 1
-        self.persistent = False
-        self.db.warned = False
-
-    def at_repeat(self):
-        obj = self.obj
-        if not obj:
-            return
-        if hasattr(obj, "heal"):
-            obj.heal(self.REST_HP)
-        hp_now = obj.get_hp() if hasattr(obj, "get_hp") else "?"
-        hp_max = obj.get_hp_max() if hasattr(obj, "get_hp_max") else "?"
-        obj.msg(f"|gYou've rested and gained {self.REST_HP} HP.|n  |w({hp_now}/{hp_max} HP)|n")
-
-    def at_stop(self):
-        obj = self.obj
-        if obj:
-            obj.db.is_resting = False
-            obj.cmdset.remove("RestCmdSet")
-
-
-class CmdRestIntercept(Command):
-    """
-    Intercepts commands while resting. First attempt warns,
-    second attempt cancels rest and runs the command.
-    """
-
-    key = "_default"
-    locks = "cmd:all()"
-    help_category = "Combat"
-
-    def func(self):
-        caller = self.caller
-        scripts = caller.scripts.get("RestScript")
-        if not scripts:
-            caller.cmdset.remove("RestCmdSet")
-            caller.execute_cmd(self.raw_string)
-            return
-
-        script = scripts[0]
-        if script.db.warned:
-            script.stop()
-            caller.msg("|yYou stop resting without healing.|n")
-            caller.execute_cmd(self.raw_string)
-        else:
-            script.db.warned = True
-            caller.msg(
-                "|yIf you stop resting you will not heal.|n"
-                "  (type any command again to get up)"
-            )
-
-
-class RestCmdSet(CmdSet):
-    key = "RestCmdSet"
-    priority = 200
-    mergetype = "Replace"
-
-    def at_cmdset_creation(self):
-        self.add(CmdRestIntercept())
-
-
-class CmdRest(Command):
-    """
-    Rest to recover health.
-
-    Usage:
-        rest
-
-    Resting heals a small amount of HP over several seconds. You cannot
-    rest while in combat. Any command during rest will prompt a warning;
-    a second command will cancel the rest.
-    """
-
-    key = "rest"
-    aliases = ["recover"]
-    help_category = "Combat"
-    locks = "cmd:all()"
-
-    def func(self):
-        caller = self.caller
-
-        # Can't rest in combat
-        if getattr(caller.db, "in_combat", False):
-            caller.msg("You can't rest while in combat!")
-            return
-
-        from contrib_dorfin.combat_handler import CombatHandler
-        handler = CombatHandler.get_handler(caller.location)
-        if handler and handler.is_in_combat(caller):
-            caller.msg("You can't rest while in combat!")
-            return
-
-        # Already resting?
-        if caller.scripts.get("RestScript"):
-            caller.msg("You're already resting.")
-            return
-
-        # Check if already at full HP
-        current_hp = caller.get_hp() if hasattr(caller, "get_hp") else 100
-        max_hp = caller.get_hp_max() if hasattr(caller, "get_hp_max") else 100
-
-        if current_hp >= max_hp:
-            caller.msg("You are already at full health.")
-            return
-
-        caller.location.msg_contents(
-            f"|w{caller.name}|n sits down to rest.",
-            exclude=[caller],
-        )
-        caller.db.is_resting = True
-        caller.cmdset.add("commands.command_combat.RestCmdSet")
-        caller.scripts.add(RestScript)
 
 
 # ---------------------------------------------------------------------------
@@ -487,7 +350,6 @@ class CmdLoot(Command):
         caller = self.caller
         args = self.args.strip()
 
-        # Find all corpses in the room
         from typeclasses.corpse import Corpse
         corpses = [
             obj for obj in caller.location.contents
@@ -498,7 +360,6 @@ class CmdLoot(Command):
             caller.msg("There are no corpses here to loot.")
             return
 
-        # Parse "item from corpse" syntax
         item_query = None
         corpse_query = None
 
@@ -507,10 +368,8 @@ class CmdLoot(Command):
             item_query = parts[0].strip()
             corpse_query = parts[1].strip()
         elif args:
-            # Could be a corpse name or an item name — try corpse first
             corpse_query = args.lower()
 
-        # Find the target corpse
         if corpse_query:
             target_corpse = None
             for c in corpses:
@@ -518,15 +377,12 @@ class CmdLoot(Command):
                     target_corpse = c
                     break
             if not target_corpse:
-                # Maybe args is an item name, not a corpse name.
-                # Try to find the item in any corpse.
                 item_query = corpse_query
                 corpse_query = None
                 target_corpse = corpses[0]
         else:
             target_corpse = corpses[0]
 
-        # Get contents of the target corpse
         contents = [obj for obj in target_corpse.contents]
 
         if not contents:
@@ -534,7 +390,6 @@ class CmdLoot(Command):
             return
 
         if item_query:
-            # Loot a specific item
             match = None
             for obj in contents:
                 if item_query in obj.key.lower():
@@ -552,16 +407,13 @@ class CmdLoot(Command):
                 exclude=[caller],
             )
         else:
-            # Loot everything
             taken = []
             for obj in contents:
                 obj.move_to(caller, quiet=True)
                 taken.append(obj.key)
             if taken:
                 item_list = ", ".join(taken)
-                caller.msg(
-                    f"|gYou loot {target_corpse.key}: |w{item_list}|n"
-                )
+                caller.msg(f"|gYou loot {target_corpse.key}: |w{item_list}|n")
                 caller.location.msg_contents(
                     f"|w{caller.name}|n loots {target_corpse.key}.",
                     exclude=[caller],
@@ -595,28 +447,23 @@ class CmdScore(Command):
     def func(self):
         caller = self.caller
 
-        # Header
         lines = [
             f"|w{'=' * 50}|n",
             f"|w  {caller.name}|n   Level {caller.db.level or 1}",
             f"|w{'=' * 50}|n",
         ]
 
-        # HP
         hp = caller.get_hp() if hasattr(caller, "get_hp") else 100
         hp_max = caller.get_hp_max() if hasattr(caller, "get_hp_max") else 100
         hp_bar = _render_bar(hp, hp_max)
         hp_color = "|g" if hp > hp_max * 0.5 else ("|y" if hp > hp_max * 0.25 else "|r")
         lines.append(f"  Health:  {hp_bar} {hp_color}{hp}/{hp_max}|n")
 
-        # XP
         xp = caller.db.xp or 0
         lines.append(f"  XP:      |w{xp}|n")
 
-        # Currency
         lines.append(f"  Purse:   |y{caller.money_string()}|n")
 
-        # Stats
         lines.append(f"\n|w  {'--- Stats ---':^46}|n")
 
         stat_names = {
@@ -625,7 +472,6 @@ class CmdScore(Command):
             "cha": "CHA", "lck": "LCK",
         }
 
-        # Display in two columns
         stat_keys = list(stat_names.keys())
         for i in range(0, len(stat_keys), 2):
             left_key = stat_keys[i]
@@ -641,19 +487,16 @@ class CmdScore(Command):
 
             lines.append(f"{left_str:<25}{right_str}")
 
-        # Needs (hunger/thirst)
         if hasattr(caller, "needs"):
             lines.append(f"\n|w  {'--- Needs ---':^46}|n")
             needs_display = caller.needs.display()
             if needs_display:
                 lines.append(needs_display)
 
-        # Wimpy
         wimpy = caller.db.wimpy or 0
         if wimpy > 0:
             lines.append(f"\n  Wimpy:   |y{wimpy} HP|n")
 
-        # Combat status
         if getattr(caller.db, "in_combat", False):
             lines.append(f"\n  |r** IN COMBAT **|n")
 
@@ -668,8 +511,8 @@ class CmdScore(Command):
 def _render_bar(current, maximum, width=20):
     """Simple ASCII health bar."""
     if maximum <= 0:
-        ratio = 0
-    else:
-        ratio = max(0.0, min(1.0, current / maximum))
-    filled = int(ratio * width)
-    return "[" + "|" * filled + "-" * (width - filled) + "]"
+        return "[" + "-" * width + "]"
+    filled = int(width * current / maximum)
+    filled = max(0, min(width, filled))
+    bar = "|g" + "#" * filled + "|x" + "-" * (width - filled) + "|n"
+    return "[" + bar + "]"

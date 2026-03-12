@@ -78,6 +78,14 @@ def on_login_menu_exit(caller, menu):
         )
 
 
+def menunode_exit(caller, raw_string="", **kwargs):
+    """
+    Empty node — returning None as text tells EvMenu to shut down.
+    The ``on_login_menu_exit`` callback then handles any deferred action.
+    """
+    return None, None
+
+
 def menunode_charselect(caller, raw_string="", **kwargs):
     """
     Main character-select screen shown after login.
@@ -121,23 +129,23 @@ def menunode_charselect(caller, raw_string="", **kwargs):
     else:
         error_line = ""
 
-    text = dedent(f"""\
-        |w=====================================
-          Welcome back, {account.key}!
-          The Land of Dorfin awaits.
-        =====================================|n
-
-          |wYour characters:|n
-        {char_section}
-
-          Character slots: {total}/{_MAX_NR_CHARACTERS}
-        {error_line}
-          |wCommands:|n
-            |wplay <name or #>|n    -- enter the game
-            |wcreate|n              -- create a new character
-            |wwho|n                 -- see who's online
-            |wquit|n                -- disconnect
-    """)
+    text = (
+        f"|w=====================================\n"
+        f"  Welcome back, {account.key}!\n"
+        f"  The Land of Dorfin awaits.\n"
+        f"=====================================|n\n"
+        f"\n"
+        f"  |wYour characters:|n\n"
+        f"{char_section}\n"
+        f"\n"
+        f"  Character slots: {total}/{_MAX_NR_CHARACTERS}\n"
+        f"{error_line}"
+        f"  |wCommands:|n\n"
+        f"    |wplay <name or #>|n    -- enter the game\n"
+        f"    |wcreate|n              -- create a new character\n"
+        f"    |wwho|n                 -- see who's online\n"
+        f"    |wquit|n                -- disconnect\n"
+    )
 
     options = {"key": "_default", "goto": (_parse_input, {"session": kwargs.get("session")})}
     return text, options
@@ -242,7 +250,7 @@ def _do_play(account, arg, characters, session):
         "session": sess,
         "character": target,
     }
-    return None
+    return "menunode_exit"
 
 
 def _do_create(account, characters, session):
@@ -292,7 +300,7 @@ def _do_create(account, characters, session):
         "character": new_char,
         "startnode": startnode,
     }
-    return None
+    return "menunode_exit"
 
 
 def _do_who(caller, session):
@@ -324,4 +332,4 @@ def _do_quit(account, session):
     if sess:
         account.msg("|wGoodbye!|n", session=sess)
         sess.sessionhandler.disconnect(sess, "Goodbye!")
-    return None
+    return "menunode_exit"

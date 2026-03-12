@@ -39,6 +39,7 @@ class CmdChargen(Command):
         target.db.char_class = None
         target.db.char_class_name = None
         target.db.languages = {"common": 1.0}
+        target.db.base_stats = None
         target.db.wip_stats = None
 
         # Reset stats to base values

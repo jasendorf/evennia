@@ -43,11 +43,14 @@ from commands.command_equip import CmdWield, CmdUnwield, CmdEq
 from commands.command_eat import CmdEat, CmdDrink
 from commands.command_fill import CmdFill
 from commands.command_containers import CmdGet, CmdPut, CmdDrop
-from commands.command_rent import CmdRentRoom
+
+# Recovery commands (intentionally separate systems)
+from commands.command_rent import CmdRentRoom   # rent room (NPC, copper cost, full recovery)
+from commands.command_rest import CmdRest       # rest (free, anywhere, 5% HP, interruptable)
 
 # Phase 5 commands
 from commands.command_combat import (
-    CmdKill, CmdFlee, CmdConsider, CmdWimpy, CmdRest, CmdScore, CmdLoot,
+    CmdKill, CmdFlee, CmdConsider, CmdWimpy, CmdScore, CmdLoot,
 )
 from commands.command_admin_combat import (
     CmdTrainingRoom, CmdTestArena, CmdSpawnMob, CmdStopCombat, CmdCombatDebug,
@@ -122,15 +125,15 @@ class CharacterCmdSet(default_cmds.CharacterCmdSet):
         self.add(CmdDrink())           # drink <item>
         self.add(CmdFill())            # fill / refill <container>
 
-        # --- Rest ---
-        self.add(CmdRentRoom())        # rent room (at Inn Counter)
+        # --- Recovery (two distinct systems, see each file's docstring) ---
+        self.add(CmdRentRoom())        # rent room (NPC, copper cost, full HP, uninterruptable)
+        self.add(CmdRest())            # rest (free, anywhere, 5% HP, interruptable)
 
         # --- Combat (Phase 5) ---
         self.add(CmdKill())            # kill / attack / k <target>
         self.add(CmdFlee())            # flee / retreat / run
         self.add(CmdConsider())        # consider / con <target>
         self.add(CmdWimpy())           # wimpy <hp>
-        self.add(CmdRest())            # rest / recover
         self.add(CmdLoot())            # loot [item from] [corpse]
         self.add(CmdScore())           # score / stats / sc
 

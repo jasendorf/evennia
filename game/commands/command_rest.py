@@ -29,6 +29,7 @@ Depends on:
 
 from evennia.commands.command import Command
 from evennia.commands.cmdset import CmdSet
+from evennia.commands.cmdhandler import CMD_NOMATCH
 from evennia import DefaultScript
 
 
@@ -93,6 +94,12 @@ class RestScript(DefaultScript):
 
 # ---------------------------------------------------------------------------
 # RestCmdSet  -- applied to the character while resting
+#
+# Uses CMD_NOMATCH (system command "__nomatch_command") to intercept all
+# unmatched input.  Because the CmdSet uses mergetype "Replace" with
+# no_exits and no_objs, the ONLY commands available are those explicitly
+# in this set -- which is none.  So every player command is "unmatched"
+# and routed to CmdRestIntercept.
 # ---------------------------------------------------------------------------
 
 class CmdRestIntercept(Command):
@@ -103,9 +110,8 @@ class CmdRestIntercept(Command):
     Second interrupt: cancels the rest (no healing) and executes the command.
     """
 
-    key = "_default"
+    key = CMD_NOMATCH
     locks = "cmd:all()"
-    help_category = "General"
 
     def func(self):
         caller = self.caller

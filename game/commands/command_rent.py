@@ -54,6 +54,7 @@ import math
 
 from evennia.commands.command import Command
 from evennia.commands.cmdset import CmdSet
+from evennia.commands.cmdhandler import CMD_NOMATCH
 from evennia import DefaultScript
 from typeclasses.characters import format_money
 
@@ -149,9 +150,8 @@ class CmdRentIntercept(Command):
     The script always completes on its own schedule.
     """
 
-    key = "_default"
+    key = CMD_NOMATCH
     locks = "cmd:all()"
-    help_category = "General"
 
     def func(self):
         caller = self.caller
@@ -182,8 +182,10 @@ class CmdRentIntercept(Command):
 
 class RentCmdSet(CmdSet):
     key = "RentCmdSet"
-    priority = 200          # above normal commands
-    mergetype = "Replace"   # replace the whole cmdset so nothing leaks through
+    priority = 200
+    mergetype = "Replace"
+    no_exits = True
+    no_objs = True
 
     def at_cmdset_creation(self):
         self.add(CmdRentIntercept())

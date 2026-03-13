@@ -293,7 +293,7 @@ class AwtownCharacter(DorfinPartyMixin, DorfinNeedsMixin, ClothedCharacter):
         """
         self.db.is_resting = False
         for s in self.scripts.get("RestScript") or []:
-            s.stop()
+            s.delete()
         try:
             self.cmdset.remove("RestCmdSet")
         except Exception:
@@ -301,7 +301,7 @@ class AwtownCharacter(DorfinPartyMixin, DorfinNeedsMixin, ClothedCharacter):
 
         self.db.is_renting = False
         for s in self.scripts.get("RentScript") or []:
-            s.stop()
+            s.delete()
         try:
             self.cmdset.remove("RentCmdSet")
         except Exception:

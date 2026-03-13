@@ -353,11 +353,12 @@ class CmdRentRoom(Command):
             caller.msg("You're already asleep in your room.")
             return
         if has_rent_flag or has_rent_script:
-            # Orphaned state — flag without script or script without flag
+            # Orphaned state — flag without script or script without flag.
+            # Use delete() not stop() to avoid triggering at_repeat/at_stop.
             caller.db.is_renting = False
             if rent_scripts:
                 for s in rent_scripts:
-                    s.stop()
+                    s.delete()
             try:
                 caller.cmdset.remove("RentCmdSet")
             except Exception:

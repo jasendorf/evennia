@@ -198,11 +198,12 @@ class CmdRest(Command):
             caller.msg("You're already resting.")
             return
         if has_flag or has_script:
-            # Orphaned state — flag without script or script without flag
+            # Orphaned state — flag without script or script without flag.
+            # Use delete() not stop() to avoid triggering at_repeat/at_stop.
             caller.db.is_resting = False
             if rest_scripts:
                 for s in rest_scripts:
-                    s.stop()
+                    s.delete()
             try:
                 caller.cmdset.remove("RestCmdSet")
             except Exception:

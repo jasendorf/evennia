@@ -345,7 +345,16 @@ class CmdRentRoom(Command):
             return
 
         # --- Already renting? ---
-        if caller.scripts.get("RentScript"):
+        has_rent_flag = getattr(caller.db, "is_renting", False)
+        has_rent_script = bool(caller.scripts.get("RentScript"))
+        if has_rent_flag and not has_rent_script:
+            # Orphaned flag (script lost to reload/crash) — self-heal
+            caller.db.is_renting = False
+            try:
+                caller.cmdset.remove("RentCmdSet")
+            except Exception:
+                pass
+        elif has_rent_flag or has_rent_script:
             caller.msg("You're already asleep in your room.")
             return
 

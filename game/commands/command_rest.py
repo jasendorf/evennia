@@ -190,7 +190,16 @@ class CmdRest(Command):
             pass
 
         # --- Already resting? ---
-        if getattr(caller.db, "is_resting", False) or caller.scripts.get("RestScript"):
+        has_flag = getattr(caller.db, "is_resting", False)
+        has_script = bool(caller.scripts.get("RestScript"))
+        if has_flag and not has_script:
+            # Orphaned flag (script lost to reload/crash) — self-heal
+            caller.db.is_resting = False
+            try:
+                caller.cmdset.remove("RestCmdSet")
+            except Exception:
+                pass
+        elif has_flag or has_script:
             caller.msg("You're already resting.")
             return
 

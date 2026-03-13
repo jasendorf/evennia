@@ -132,6 +132,12 @@ def trigger_party_autoassist(attacker, target, handler):
         if hasattr(member, "is_alive") and not member.is_alive():
             continue
 
+        # Don't auto-join if resting or renting
+        if getattr(member.db, "is_resting", False):
+            continue
+        if getattr(member.db, "is_renting", False):
+            continue
+
         # Join the fight
         handler.add_combatant(member, target)
 

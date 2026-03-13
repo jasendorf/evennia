@@ -190,7 +190,7 @@ class CmdRest(Command):
             pass
 
         # --- Already resting? ---
-        if caller.scripts.get("RestScript"):
+        if getattr(caller.db, "is_resting", False) or caller.scripts.get("RestScript"):
             caller.msg("You're already resting.")
             return
 

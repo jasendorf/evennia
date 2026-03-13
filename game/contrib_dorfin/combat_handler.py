@@ -155,10 +155,27 @@ class CombatHandler(DefaultScript):
         Add a combatant to the fight. If they're already in, just
         update their target.
 
+        Renting characters are protected and cannot be added to combat.
+        Resting characters have their rest cancelled before joining.
+
         Args:
             combatant: The object entering combat.
             target: Optional initial target.
+
+        Returns:
+            bool: True if the combatant was added, False if blocked.
         """
+        # Renting players are in a paid safe state — refuse combat
+        if hasattr(combatant, "db") and getattr(combatant.db, "is_renting", False):
+            return False
+
+        # Cancel rest if the combatant is resting
+        if hasattr(combatant, "db") and getattr(combatant.db, "is_resting", False):
+            rest_scripts = combatant.scripts.get("RestScript")
+            if rest_scripts:
+                rest_scripts[0].stop()
+            combatant.msg("|rYour rest is interrupted!|n")
+
         dbref = combatant.dbref
         combatants = self.db.combatants or []
 
@@ -169,6 +186,8 @@ class CombatHandler(DefaultScript):
 
         if target:
             self.set_target(combatant, target)
+
+        return True
 
     def remove_combatant(self, combatant, quiet=False):
         """

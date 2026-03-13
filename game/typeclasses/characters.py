@@ -266,6 +266,10 @@ class AwtownCharacter(DorfinPartyMixin, DorfinNeedsMixin, ClothedCharacter):
             self.db.founder_cooldowns = {}
         if self.db.languages is None:
             self.db.languages = {"common": 1.0}
+        if self.db.is_resting is None:
+            self.db.is_resting = False
+        if self.db.is_renting is None:
+            self.db.is_renting = False
 
     # ------------------------------------------------------------------
     # Reload / puppet hooks
@@ -274,11 +278,28 @@ class AwtownCharacter(DorfinPartyMixin, DorfinNeedsMixin, ClothedCharacter):
     def at_init(self):
         """
         Called on every server reload. Ensures BuffHandler is initialised
-        before any hot-reload issues can arise.
+        before any hot-reload issues can arise. Also cleans up orphaned
+        rest/rent state left by non-persistent scripts lost during reload.
         """
         super().at_init()
         if _BUFFS_AVAILABLE:
             _ = self.buffs
+
+        # Clean up orphaned rest state (script is non-persistent)
+        if self.db.is_resting and not self.scripts.get("RestScript"):
+            self.db.is_resting = False
+            try:
+                self.cmdset.remove("RestCmdSet")
+            except Exception:
+                pass
+
+        # Clean up orphaned rent state (script is non-persistent)
+        if self.db.is_renting and not self.scripts.get("RentScript"):
+            self.db.is_renting = False
+            try:
+                self.cmdset.remove("RentCmdSet")
+            except Exception:
+                pass
 
     def at_post_puppet(self, **kwargs):
         """

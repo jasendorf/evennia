@@ -159,7 +159,10 @@ class CmdRentIntercept(Command):
 
         if not scripts:
             # Script is gone (finished or error) — clean up the cmdset
-            caller.cmdset.remove("RentCmdSet")
+            try:
+                caller.cmdset.remove("RentCmdSet")
+            except Exception:
+                pass
             caller.execute_cmd(self.raw_string)
             return
 
@@ -274,20 +277,24 @@ class RentScript(DefaultScript):
 
         # Clear the renting flag and cmdset
         obj.db.is_renting = False
-        obj.cmdset.remove("RentCmdSet")
+        try:
+            obj.cmdset.remove("RentCmdSet")
+        except Exception:
+            pass
 
         # Check-out message from the NPC if still in a rent room
         if obj.location:
             npc = _find_renter_npc(obj.location)
+            npc_name = npc.name if npc else "The innkeeper"
             checkout_msg = _npc_msg(
                 npc, "msg_checkout",
                 "You gather your things and step out, well rested.",
-                npc=npc.name, name=obj.name,
+                npc=npc_name, name=obj.name,
             )
             checkout_room = _npc_msg(
                 npc, "msg_checkout_room",
                 f"|w{obj.name}|n emerges from their room, looking refreshed.",
-                npc=npc.name, name=obj.name,
+                npc=npc_name, name=obj.name,
             )
             obj.msg(checkout_msg)
             obj.location.msg_contents(checkout_room, exclude=[obj])
@@ -342,6 +349,14 @@ class CmdRentRoom(Command):
             caller.msg("You're already asleep in your room.")
             return
 
+        # --- Cannot rent while resting ---
+        if getattr(caller.db, "is_resting", False):
+            caller.msg("You're already resting. Get up first.")
+            return
+
+        # --- Determine cost for this NPC ---
+        cost = getattr(npc.db, "rent_cost", None) or RENT_COST
+
         # --- Cannot rent while in combat ---
         if getattr(caller.db, "in_combat", False):
             refusal = _npc_msg(
@@ -351,9 +366,6 @@ class CmdRentRoom(Command):
             )
             caller.msg(refusal)
             return
-
-        # --- Determine cost for this NPC ---
-        cost = getattr(npc.db, "rent_cost", None) or RENT_COST
 
         # --- Check for pending well-rested confirmation ---
         if caller.ndb._rent_confirm:

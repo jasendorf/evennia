@@ -191,17 +191,22 @@ class CmdRest(Command):
 
         # --- Already resting? ---
         has_flag = getattr(caller.db, "is_resting", False)
-        has_script = bool(caller.scripts.get("RestScript"))
-        if has_flag and not has_script:
-            # Orphaned flag (script lost to reload/crash) — self-heal
+        rest_scripts = caller.scripts.get("RestScript")
+        has_script = bool(rest_scripts)
+        if has_flag and has_script:
+            # Genuinely resting — both flag and script present
+            caller.msg("You're already resting.")
+            return
+        if has_flag or has_script:
+            # Orphaned state — flag without script or script without flag
             caller.db.is_resting = False
+            if rest_scripts:
+                for s in rest_scripts:
+                    s.stop()
             try:
                 caller.cmdset.remove("RestCmdSet")
             except Exception:
                 pass
-        elif has_flag or has_script:
-            caller.msg("You're already resting.")
-            return
 
         # --- Cannot rest while renting ---
         if getattr(caller.db, "is_renting", False):

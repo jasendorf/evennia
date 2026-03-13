@@ -278,21 +278,18 @@ class AwtownCharacter(DorfinPartyMixin, DorfinNeedsMixin, ClothedCharacter):
     def at_init(self):
         """
         Called on every server reload. Ensures BuffHandler is initialised
-        before any hot-reload issues can arise. Also cleans up orphaned
-        rest/rent state left by non-persistent scripts lost during reload.
+        before any hot-reload issues can arise.
         """
         super().at_init()
         if _BUFFS_AVAILABLE:
             _ = self.buffs
 
-        self._cleanup_orphaned_rest_rent()
-
     def _cleanup_orphaned_rest_rent(self):
-        """Clear rest/rent state unconditionally on reload.
+        """Clear rest/rent state on puppet.
 
-        Both RestScript and RentScript are non-persistent, so they should not
-        survive a reload. Clear the flag AND stop any zombie script objects
-        that may still exist in the database.
+        Called from at_post_puppet (NOT at_init — stopping scripts during
+        at_init can corrupt Django's database routing). The commands
+        themselves also self-heal as a fallback.
         """
         self.db.is_resting = False
         for s in self.scripts.get("RestScript") or []:

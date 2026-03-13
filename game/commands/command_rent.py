@@ -86,7 +86,7 @@ def _find_renter_npc(location):
     return None
 
 
-def _npc_msg(npc, attr, fallback, **kwargs):
+def _npc_msg(npc_obj, attr, fallback, **kwargs):
     """
     Return the NPC's custom dialogue string for *attr* if set,
     otherwise return *fallback*. Any keyword arguments are interpolated
@@ -104,7 +104,7 @@ def _npc_msg(npc, attr, fallback, **kwargs):
     If format() fails for any reason the raw string is returned as-is
     so a misconfigured NPC attribute never raises an error mid-session.
     """
-    custom = getattr(npc.db, attr, None) if npc else None
+    custom = getattr(npc_obj.db, attr, None) if npc_obj else None
     template = custom if custom else fallback
     if kwargs:
         try:

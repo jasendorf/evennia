@@ -285,15 +285,16 @@ class AwtownCharacter(DorfinPartyMixin, DorfinNeedsMixin, ClothedCharacter):
         if _BUFFS_AVAILABLE:
             _ = self.buffs
 
-        # Clean up orphaned rest state (script is non-persistent)
+        self._cleanup_orphaned_rest_rent()
+
+    def _cleanup_orphaned_rest_rent(self):
+        """Clear rest/rent flags left behind when non-persistent scripts are lost."""
         if self.db.is_resting and not self.scripts.get("RestScript"):
             self.db.is_resting = False
             try:
                 self.cmdset.remove("RestCmdSet")
             except Exception:
                 pass
-
-        # Clean up orphaned rent state (script is non-persistent)
         if self.db.is_renting and not self.scripts.get("RentScript"):
             self.db.is_renting = False
             try:
@@ -307,6 +308,7 @@ class AwtownCharacter(DorfinPartyMixin, DorfinNeedsMixin, ClothedCharacter):
         Restarts needs script and re-registers callbacks.
         """
         super().at_post_puppet(**kwargs)
+        self._cleanup_orphaned_rest_rent()
 
     # ------------------------------------------------------------------
     # Stat helpers

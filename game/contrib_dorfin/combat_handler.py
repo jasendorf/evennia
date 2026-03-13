@@ -747,7 +747,7 @@ class CombatHandler(DefaultScript):
     def _prune_missing(self):
         """
         Remove combatants that no longer exist, left the room, or
-        are disconnected.
+        are disconnected. Also clears their combat state flags.
         """
         room = self.obj
         combatants = list(self.db.combatants or [])
@@ -756,14 +756,14 @@ class CombatHandler(DefaultScript):
         for dbref in combatants:
             obj = self._resolve(dbref)
             if not obj:
-                to_remove.append(dbref)
+                to_remove.append((dbref, None))
                 continue
             if obj.location != room:
-                to_remove.append(dbref)
+                to_remove.append((dbref, obj))
                 continue
 
         if to_remove:
-            for dbref in to_remove:
+            for dbref, obj in to_remove:
                 if dbref in combatants:
                     combatants.remove(dbref)
                 targets = self.db.targets or {}
@@ -772,6 +772,8 @@ class CombatHandler(DefaultScript):
                     if v == dbref:
                         del targets[k]
                 self.db.targets = targets
+                if obj:
+                    self._cleanup_combatant(obj)
             self.db.combatants = combatants
 
     def _check_combat_end(self):

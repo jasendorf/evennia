@@ -219,6 +219,7 @@ class RentScript(DefaultScript):
         self.desc = "Renting a room to recover."
         self.interval = TICK_INTERVAL
         self.repeats = TICKS
+        self.start_delay = True
         self.persistent = False
         self.db.tick_count = 0
         self.db.hp_per_tick = 0

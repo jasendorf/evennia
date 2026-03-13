@@ -58,6 +58,7 @@ class RestScript(DefaultScript):
         self.desc = "Resting to recover."
         self.interval = REST_INTERVAL
         self.repeats = 1
+        self.start_delay = True
         self.persistent = False
         self.db.warned = False
 

@@ -2,12 +2,12 @@
 Rest command
 ============
 
-    rest    -- sit down and catch your breath for 6 seconds
+    rest    -- sit down and catch your breath for 10 seconds
 
 Resting is a brief, interruptable recovery action available anywhere.
 It is SEPARATE from renting a room at an inn.
 
-    Resting  : db.is_resting = True, interruptable, 6s, 5% of max HP,
+    Resting  : db.is_resting = True, interruptable, 10s, 5% of max HP,
                free, usable anywhere outside of active combat,
                NOT safe from mob aggro.
     Renting  : db.is_renting = True, uninterruptable, 30s, full HP/hunger/
@@ -15,7 +15,7 @@ It is SEPARATE from renting a room at an inn.
                safe from mob aggro.
 
 When resting, any command triggers a warning. A second command cancels
-the rest with no healing. The rest completes automatically after 6 seconds
+the rest with no healing. The rest completes automatically after 10 seconds
 if left undisturbed.
 
 Recovery amount: max(1, caller.get_hp_max() // 20)  (5% of max HP, floor 1)
@@ -36,7 +36,7 @@ from evennia import DefaultScript
 # Constants
 # ---------------------------------------------------------------------------
 
-REST_INTERVAL  = 6     # seconds until recovery triggers
+REST_INTERVAL  = 10    # seconds until recovery triggers
 REST_PCT       = 20    # divisor for recovery: hp_max // REST_PCT  (5%)
 
 
@@ -92,7 +92,7 @@ class RestScript(DefaultScript):
 
 
 # ---------------------------------------------------------------------------
-# RestCmdSet  — applied to the character while resting
+# RestCmdSet  -- applied to the character while resting
 # ---------------------------------------------------------------------------
 
 class CmdRestIntercept(Command):
@@ -112,7 +112,8 @@ class CmdRestIntercept(Command):
         scripts = caller.scripts.get("RestScript")
 
         if not scripts:
-            # Script already gone — clean up and pass the command through
+            # Script already gone -- force-cleanup and pass the command through
+            caller.db.is_resting = False
             try:
                 caller.cmdset.remove("RestCmdSet")
             except Exception:
@@ -123,15 +124,21 @@ class CmdRestIntercept(Command):
         script = scripts[0]
 
         if script.db.warned:
-            # Second attempt — cancel the rest, no healing
+            # Second attempt -- cancel the rest, no healing
             script.stop()
+            # Belt-and-suspenders: ensure cmdset is removed even if at_stop failed
+            caller.db.is_resting = False
+            try:
+                caller.cmdset.remove("RestCmdSet")
+            except Exception:
+                pass
             caller.msg("|yYou get up before you've finished resting. No HP recovered.|n")
             caller.execute_cmd(self.raw_string)
         else:
-            # First attempt — warn
+            # First attempt -- warn
             script.db.warned = True
             caller.msg(
-                "|yIf you stop resting now you won't recover any HP.|n"
+                "|yIf you stop resting now you won't recover any HP.|n\n"
                 "  (repeat the command to get up anyway)"
             )
 
@@ -140,6 +147,8 @@ class RestCmdSet(CmdSet):
     key = "RestCmdSet"
     priority = 200
     mergetype = "Replace"
+    no_exits = True
+    no_objs = True
 
     def at_cmdset_creation(self):
         self.add(CmdRestIntercept())
@@ -156,8 +165,8 @@ class CmdRest(Command):
     Usage:
         rest
 
-    Resting for 6 undisturbed seconds restores 5% of your maximum HP.
-    You can rest anywhere — after a long journey, after training a spell,
+    Resting for 10 undisturbed seconds restores 5% of your maximum HP.
+    You can rest anywhere -- after a long journey, after training a spell,
     or any time you need a quick breather.
 
     You cannot rest while actively in combat. Wandering or patrolling
@@ -195,11 +204,11 @@ class CmdRest(Command):
         rest_scripts = caller.scripts.get("RestScript")
         has_script = bool(rest_scripts)
         if has_flag and has_script:
-            # Genuinely resting — both flag and script present
+            # Genuinely resting -- both flag and script present
             caller.msg("You're already resting.")
             return
         if has_flag or has_script:
-            # Orphaned state — flag without script or script without flag.
+            # Orphaned state -- flag without script or script without flag.
             # Use delete() not stop() to avoid triggering at_repeat/at_stop.
             caller.db.is_resting = False
             if rest_scripts:

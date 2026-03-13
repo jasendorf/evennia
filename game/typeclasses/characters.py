@@ -288,14 +288,20 @@ class AwtownCharacter(DorfinPartyMixin, DorfinNeedsMixin, ClothedCharacter):
         self._cleanup_orphaned_rest_rent()
 
     def _cleanup_orphaned_rest_rent(self):
-        """Clear rest/rent flags left behind when non-persistent scripts are lost."""
-        if self.db.is_resting and not self.scripts.get("RestScript"):
+        """Clear rest/rent flags left behind when non-persistent scripts are lost.
+
+        Both RestScript and RentScript are non-persistent, so they are always
+        destroyed on reload. Unconditionally clear the flags here rather than
+        checking for the script — the script may not yet be purged when at_init
+        runs, causing a false-negative that leaves the flag stuck.
+        """
+        if self.db.is_resting:
             self.db.is_resting = False
             try:
                 self.cmdset.remove("RestCmdSet")
             except Exception:
                 pass
-        if self.db.is_renting and not self.scripts.get("RentScript"):
+        if self.db.is_renting:
             self.db.is_renting = False
             try:
                 self.cmdset.remove("RentCmdSet")

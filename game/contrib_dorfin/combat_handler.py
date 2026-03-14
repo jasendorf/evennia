@@ -568,8 +568,9 @@ class CombatHandler(DefaultScript):
             if hasattr(player, "check_level_up"):
                 try:
                     player.check_level_up()
-                except Exception:
-                    pass
+                except Exception as err:
+                    log_err(f"check_level_up error for {player}: {err}")
+                    player.msg(f"|r[Level-up error: {err}]|n")
 
     # ------------------------------------------------------------------
     # Wimpy auto-flee

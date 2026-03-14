@@ -267,13 +267,14 @@ ROOM_DATA += [
      "and the smell of roasting meat and spilled ale saturates everything pleasantly."),
     ("tavern_ne","The Kitchen","building",
      "Cook Darra's domain, run with iron efficiency and complete intolerance for uninvited visitors. "
-     "The smell is extraordinary. The cellar stair is to the south."),
+     "The smell is extraordinary. A latched door to the south bears a 'Kitchen Staff Only' sign."),
     ("tavern_sw","The Inn Counter","building",
      "A worn counter of dark wood, pigeonholes for keys on the wall behind it. "
      "Innkeeper Bess Copperladle takes lodging payments here with warm efficiency."),
-    ("tavern_se","The Cellar","building",
-     "Stone stairs lead down to a barrel-lined room, cool and dim. Casks of ale and wine are racked "
-     "floor to ceiling. The east passage leads into the Humming Court."),
+    ("tavern_se","The Stage","building",
+     "A small raised wooden platform occupies the southeast corner of the inn, ringed by mismatched "
+     "benches worn smooth from years of enthusiastic audiences. Scuff marks and candle-wax drippings "
+     "cover the stage. The east passage leads into the Humming Court."),
 
     # ── GRAND FORGE /4 (4) ───────────────────────────────────────────────────
     ("forge_nw","The Iron Forge","building",
@@ -690,8 +691,8 @@ EXIT_DATA = [
     ("tavern_ne","west","w","tavern_nw","std",None),
     ("tavern_nw","south","s","tavern_sw","std",None),
     ("tavern_sw","north","n","tavern_nw","std",None),
-    ("tavern_ne","south","s","tavern_se","std",None),
-    ("tavern_se","north","n","tavern_ne","std",None),
+    ("tavern_ne","south","s","tavern_se","gate","kitchen door"),
+    ("tavern_se","north","n","tavern_ne","gate","kitchen door"),
     ("tavern_sw","east","e","tavern_se","std",None),
     ("tavern_se","west","w","tavern_sw","std",None),
 
@@ -828,7 +829,7 @@ NPC_DATA = [
      "tavern_nw","merchant"),
     ("npc_cobble","Lute-player Cobble",
      "A wandering bard of considerable skill and terrible grace under requests.",
-     "tavern_nw","generic"),
+     "tavern_se","generic"),
     ("npc_darra","Cook Darra",
      "The undisputed ruler of the kitchen. She does not welcome visitors.",
      "tavern_ne","generic"),
@@ -951,6 +952,7 @@ GATE_PAIRS = [
     ("gate_back", "south", "garden_nw",  "north"),  # Memorial Garden
     ("gate_main", "north", "commons_se", "south"),  # Grand Gate city gate
     ("gate_side", "north", "stables_sw", "south"),  # Warden's Gate city gate
+    ("tavern_se", "north", "tavern_ne",  "south"),  # Kitchen door
 ]
 
 # =============================================================================

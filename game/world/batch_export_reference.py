@@ -3,7 +3,7 @@ batch_export_reference.py  —  Export live world to a readable markdown referen
 Run with:  @batchcode world.batch_export_reference
 
 Writes /usr/src/game/server/world_export_reference.md
-Retrieve with:  kubectl exec -it <pod> -- cat /usr/src/game/server/world_export_reference.md
+Copy to repo:  kubectl exec deploy/evennia -c evennia -- cat /usr/src/game/server/world_export_reference.md > reference/world_export_reference.md
 """
 
 # HEADER

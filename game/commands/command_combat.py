@@ -493,7 +493,26 @@ class CmdScore(Command):
         lines.append(f"  Health:  {hp_bar} {hp_color}{hp}/{hp_max}|n")
 
         xp = caller.db.xp or 0
-        lines.append(f"  XP:      |w{xp}|n")
+        level = caller.db.level or 1
+        from contrib_dorfin.combat_config import CHARACTER_LEVEL_XP, MAX_CHARACTER_LEVEL
+        if level >= MAX_CHARACTER_LEVEL:
+            lines.append(f"  XP:      |w{xp}|n (|cMAX LEVEL|n)")
+        else:
+            xp_current_level = CHARACTER_LEVEL_XP[level]
+            xp_next_level = CHARACTER_LEVEL_XP[level + 1]
+            xp_into_level = xp - xp_current_level
+            xp_needed = xp_next_level - xp_current_level
+            xp_bar = _render_bar(xp_into_level, xp_needed)
+            lines.append(
+                f"  XP:      {xp_bar} |w{xp_into_level}/{xp_needed}|n to level {level + 1}"
+            )
+
+        unspent = caller.db.unspent_stat_points or 0
+        if unspent > 0:
+            lines.append(
+                f"  |y  {unspent} unspent stat point{'s' if unspent != 1 else ''}"
+                f" — use |wtrain <stat>|n"
+            )
 
         lines.append(f"  Purse:   |y{caller.money_string()}|n")
 
@@ -535,6 +554,96 @@ class CmdScore(Command):
 
         lines.append(f"|w{'=' * 50}|n")
         caller.msg("\n".join(lines))
+
+
+# ---------------------------------------------------------------------------
+# train
+# ---------------------------------------------------------------------------
+
+TRAINABLE_STATS = {"str", "dex", "agi", "con", "end", "int", "wis", "per", "cha", "lck"}
+
+STAT_FULL_NAMES = {
+    "str": "Strength", "dex": "Dexterity", "agi": "Agility",
+    "con": "Constitution", "end": "Endurance", "int": "Intelligence",
+    "wis": "Wisdom", "per": "Perception", "cha": "Charisma", "lck": "Luck",
+}
+
+
+class CmdTrain(Command):
+    """
+    Spend stat points to permanently increase a base stat.
+
+    Usage:
+        train <stat>
+        train str
+        train con
+
+    You earn stat points at every 5th character level (5, 10, 15, ..., 90).
+    Each point permanently raises the chosen stat by 1.
+
+    Valid stats: STR, DEX, AGI, CON, END, INT, WIS, PER, CHA, LCK
+    """
+
+    key = "train"
+    aliases = ["spend"]
+    help_category = "General"
+    locks = "cmd:all()"
+
+    def func(self):
+        caller = self.caller
+        args = self.args.strip().lower()
+
+        unspent = caller.db.unspent_stat_points or 0
+
+        if not args:
+            if unspent > 0:
+                caller.msg(
+                    f"|wYou have {unspent} unspent stat point"
+                    f"{'s' if unspent != 1 else ''}.|n\n"
+                    f"Usage: |wtrain <stat>|n  (e.g. |wtrain str|n)\n"
+                    f"Stats: {', '.join(s.upper() for s in sorted(TRAINABLE_STATS))}"
+                )
+            else:
+                caller.msg("You have no unspent stat points.")
+            return
+
+        if args not in TRAINABLE_STATS:
+            caller.msg(
+                f"'{args}' is not a valid stat. Choose from: "
+                f"{', '.join(s.upper() for s in sorted(TRAINABLE_STATS))}"
+            )
+            return
+
+        if unspent <= 0:
+            caller.msg("You have no unspent stat points. Level up to earn more.")
+            return
+
+        # Apply the stat increase
+        if not hasattr(caller, "traits") or not caller.traits:
+            caller.msg("Trait system unavailable.")
+            return
+
+        trait = caller.traits.get(args)
+        if not trait:
+            caller.msg(f"Cannot find trait '{args}'.")
+            return
+
+        old_val = trait.base
+        trait.base += 1
+        new_val = trait.base
+        caller.db.unspent_stat_points = unspent - 1
+        remaining = caller.db.unspent_stat_points
+
+        stat_name = STAT_FULL_NAMES.get(args, args.upper())
+        caller.msg(
+            f"|g{stat_name} increased from {old_val} to |w{new_val}|g!|n"
+            f" ({remaining} stat point{'s' if remaining != 1 else ''} remaining)"
+        )
+
+        # If they raised CON, update HP max retroactively for current level
+        # (future levels will use the new CON automatically)
+        if args == "con":
+            caller.msg("|xNote: Future level-ups will benefit from your higher CON.|n")
 
 
 # ---------------------------------------------------------------------------

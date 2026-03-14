@@ -564,6 +564,13 @@ class CombatHandler(DefaultScript):
             player.db.xp = (player.db.xp or 0) + actual_xp
             player.msg(f"|g  You receive {actual_xp} experience points.|n")
 
+            # Check for level-up
+            if hasattr(player, "check_level_up"):
+                try:
+                    player.check_level_up()
+                except Exception:
+                    pass
+
     # ------------------------------------------------------------------
     # Wimpy auto-flee
     # ------------------------------------------------------------------

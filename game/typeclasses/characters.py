@@ -247,6 +247,8 @@ class AwtownCharacter(DorfinPartyMixin, DorfinNeedsMixin, ClothedCharacter):
             self.db.xp = 0
         if self.db.level is None:
             self.db.level = 1
+        if self.db.unspent_stat_points is None:
+            self.db.unspent_stat_points = 0
         if self.db.wimpy is None:
             self.db.wimpy = 0
         if self.db.in_combat is None:
@@ -376,6 +378,89 @@ class AwtownCharacter(DorfinPartyMixin, DorfinNeedsMixin, ClothedCharacter):
             )
             return int(self.traits.hp.current)
         return self.get_hp()
+
+    # ------------------------------------------------------------------
+    # Leveling
+    # ------------------------------------------------------------------
+
+    def check_level_up(self):
+        """
+        Check if the character has enough XP to level up. Handles
+        multi-level catch-up (e.g. if a character accumulated XP
+        across several thresholds before this was called).
+
+        Returns:
+            int: Number of levels gained (0 if none).
+        """
+        from contrib_dorfin.combat_config import CHARACTER_LEVEL_XP, MAX_CHARACTER_LEVEL
+
+        current_xp = self.db.xp or 0
+        current_level = self.db.level or 1
+        levels_gained = 0
+
+        while current_level < MAX_CHARACTER_LEVEL:
+            next_level = current_level + 1
+            xp_needed = CHARACTER_LEVEL_XP[next_level]
+            if current_xp >= xp_needed:
+                current_level = next_level
+                levels_gained += 1
+                self._level_up(current_level)
+            else:
+                break
+
+        if levels_gained:
+            self.db.level = current_level
+
+        return levels_gained
+
+    def _level_up(self, new_level):
+        """
+        Apply a single level-up: grow HP, heal, grant stat point, announce.
+
+        Args:
+            new_level (int): The level just reached.
+        """
+        from contrib_dorfin.combat_config import STAT_POINT_LEVELS, HP_PER_LEVEL_BASE
+
+        # HP growth: +5 + CON // 2
+        con = self.get_stat("con") if hasattr(self, "get_stat") else 10
+        hp_gain = HP_PER_LEVEL_BASE + con // 2
+
+        if _TRAITS_AVAILABLE and self.traits and self.traits.get("hp"):
+            self.traits.hp.max += hp_gain
+            self.traits.hp.base += hp_gain
+            # Full heal
+            self.traits.hp.current = self.traits.hp.max
+
+        new_hp_max = self.get_hp_max()
+
+        # Stat point at milestone levels
+        stat_point = new_level in STAT_POINT_LEVELS
+        if stat_point:
+            self.db.unspent_stat_points = (self.db.unspent_stat_points or 0) + 1
+
+        # Announce to player
+        msg_parts = [
+            f"\n|y{'=' * 50}|n",
+            f"|y  *** LEVEL UP! ***|n",
+            f"|y  You are now level |w{new_level}|y!|n",
+            f"|y  HP: +{hp_gain} (max now {new_hp_max})|n",
+        ]
+        if stat_point:
+            points = self.db.unspent_stat_points or 0
+            msg_parts.append(
+                f"|y  You gained a stat point! "
+                f"({points} unspent — use |wtrain <stat>|y)|n"
+            )
+        msg_parts.append(f"|y{'=' * 50}|n")
+        self.msg("\n".join(msg_parts))
+
+        # Announce to room
+        if self.location:
+            self.location.msg_contents(
+                f"|y{self.name} has reached level {new_level}!|n",
+                exclude=[self],
+            )
 
     def take_damage(self, amount, source=None):
         """

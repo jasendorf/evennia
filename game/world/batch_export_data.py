@@ -3,7 +3,7 @@ batch_export_data.py  —  Export live world to batch_awtown-style data tuples
 Run with:  @batchcode world.batch_export_data
 
 Writes /usr/src/game/server/world_export_data.txt
-Retrieve with:  kubectl exec -it <pod> -- cat /usr/src/game/server/world_export_data.txt
+Copy to repo:  kubectl exec deploy/evennia -c evennia -- cat /usr/src/game/server/world_export_data.txt > reference/world_export_data.txt
 """
 
 # HEADER

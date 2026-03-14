@@ -51,7 +51,7 @@ from commands.command_rest import CmdRest       # rest (free, anywhere, 5% HP, i
 
 # Phase 5 commands
 from commands.command_combat import (
-    CmdKill, CmdFlee, CmdConsider, CmdWimpy, CmdScore, CmdLoot,
+    CmdKill, CmdFlee, CmdConsider, CmdWimpy, CmdScore, CmdLoot, CmdTrain,
 )
 from commands.command_admin_combat import (
     CmdTrainingRoom, CmdTestArena, CmdSpawnMob, CmdStopCombat, CmdCombatDebug,
@@ -139,6 +139,7 @@ class CharacterCmdSet(default_cmds.CharacterCmdSet):
         self.add(CmdWimpy())           # wimpy <hp>
         self.add(CmdLoot())            # loot [item from] [corpse]
         self.add(CmdScore())           # score / stats / sc
+        self.add(CmdTrain())           # train <stat> (spend stat points)
 
         # --- Party (Phase 5) ---
         self.add(CmdParty())           # party create/invite/accept/leave/etc.

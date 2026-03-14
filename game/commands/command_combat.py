@@ -326,10 +326,11 @@ class CmdLoot(Command):
     Loot items from a corpse.
 
     Usage:
-        loot
-        loot <corpse>
-        loot <item> from <corpse>
-        get <item> from <corpse>
+        loot                              -- loot everything from first corpse
+        loot <corpse>                     -- loot everything from named corpse
+        loot <item> from <corpse>         -- loot one item
+        loot <N> <item> from <corpse>     -- loot N matching items
+        loot all <item> from <corpse>     -- loot all matching items
 
     Without arguments, loots everything from the first corpse in the room.
     You can specify a particular corpse or a particular item.
@@ -338,7 +339,8 @@ class CmdLoot(Command):
         loot
         loot corpse
         loot dagger from corpse
-        loot spider silk from corpse of goblin
+        loot 2 coins from corpse
+        loot all silk from corpse of goblin
     """
 
     key = "loot"
@@ -351,6 +353,8 @@ class CmdLoot(Command):
         args = self.args.strip()
 
         from typeclasses.corpse import Corpse
+        from commands.command_containers import _parse_quantity, _find_one, _find_n
+
         corpses = [
             obj for obj in caller.location.contents
             if isinstance(obj, Corpse)
@@ -360,12 +364,12 @@ class CmdLoot(Command):
             caller.msg("There are no corpses here to loot.")
             return
 
-        item_query = None
+        item_text = None
         corpse_query = None
 
         if " from " in args.lower():
             parts = args.lower().split(" from ", 1)
-            item_query = parts[0].strip()
+            item_text = parts[0].strip()
             corpse_query = parts[1].strip()
         elif args:
             corpse_query = args.lower()
@@ -377,7 +381,7 @@ class CmdLoot(Command):
                     target_corpse = c
                     break
             if not target_corpse:
-                item_query = corpse_query
+                item_text = corpse_query
                 corpse_query = None
                 target_corpse = corpses[0]
         else:
@@ -389,12 +393,41 @@ class CmdLoot(Command):
             caller.msg(f"{target_corpse.key} is empty.")
             return
 
-        if item_query:
-            match = None
-            for obj in contents:
-                if item_query in obj.key.lower():
-                    match = obj
-                    break
+        if item_text:
+            qty, item_query = _parse_quantity(item_text)
+
+            if item_query is None:
+                # "loot all from corpse" — take everything
+                qty = "all"
+
+            # Multiple items
+            if qty != 1:
+                if item_query:
+                    matches = _find_n(caller, item_query, contents, qty)
+                else:
+                    matches = contents
+                if not matches:
+                    caller.msg(
+                        f"You don't see '{item_query}' in {target_corpse.key}."
+                    )
+                    return
+                taken = []
+                for obj in list(matches):
+                    obj.move_to(caller, quiet=True)
+                    taken.append(obj.key)
+                if taken:
+                    caller.msg(
+                        f"|gYou take {len(taken)}x from {target_corpse.key}: "
+                        f"|w{', '.join(taken)}|n"
+                    )
+                    caller.location.msg_contents(
+                        f"|w{caller.name}|n takes items from {target_corpse.key}.",
+                        exclude=[caller],
+                    )
+                return
+
+            # Single item
+            match = _find_one(caller, item_query, contents)
             if not match:
                 caller.msg(
                     f"You don't see '{item_query}' in {target_corpse.key}."

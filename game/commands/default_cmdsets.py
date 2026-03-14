@@ -40,6 +40,7 @@ from commands.command_kit import CmdClaimKit, CmdChooseWeapon
 
 # Phase 4 commands
 from commands.command_equip import CmdWield, CmdUnwield, CmdEq
+from commands.command_wear import CmdWearAll, CmdInventory
 from commands.command_eat import CmdEat, CmdDrink
 from commands.command_fill import CmdFill
 from commands.command_containers import CmdGet, CmdPut, CmdDrop
@@ -116,9 +117,11 @@ class CharacterCmdSet(default_cmds.CharacterCmdSet):
         self.add(CmdChooseWeapon())    # choose weapon (at Outfitter's Rest)
 
         # --- Equipment ---
-        self.add(CmdWield())           # wield <weapon>
+        self.add(CmdWield())           # wield <weapon> / wield all
         self.add(CmdUnwield())         # unwield [slot]
         self.add(CmdEq())              # eq / equipment
+        self.add(CmdWearAll())         # wear (overrides contrib: adds 'wear all')
+        self.add(CmdInventory())       # inventory (overrides contrib: shows wielded)
 
         # --- Eat & Drink ---
         self.add(CmdEat())             # eat <food>

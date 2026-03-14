@@ -25,13 +25,18 @@ class CmdWield(Command):
     Usage:
         wield <weapon>
         wield <weapon> offhand
+        wield all
 
     Equips the named weapon into your weapon slot (or offhand if specified).
+    ``wield all`` auto-equips the first main-hand weapon and first
+    offhand weapon/shield found in your inventory.
+
     You must be carrying the item.
 
     Examples:
         wield short sword
         wield dagger offhand
+        wield all
     """
 
     key = "wield"
@@ -45,6 +50,13 @@ class CmdWield(Command):
 
         if not args:
             caller.msg("Wield what?")
+            return
+
+        from typeclasses.items import AwtownWeapon
+
+        # "wield all" — auto-equip weapon + offhand
+        if args.lower() == "all":
+            self._wield_all(caller, AwtownWeapon)
             return
 
         # Parse optional "offhand" suffix
@@ -67,7 +79,6 @@ class CmdWield(Command):
             item = item[0]
 
         # Must be a weapon
-        from typeclasses.items import AwtownWeapon
         if not isinstance(item, AwtownWeapon):
             caller.msg(f"{item.key} is not a weapon.")
             return
@@ -89,6 +100,67 @@ class CmdWield(Command):
             f"|w{caller.name}|n wields {item.key}.",
             exclude=caller
         )
+
+    def _wield_all(self, caller, AwtownWeapon):
+        """Auto-equip a main-hand weapon and an offhand weapon/shield."""
+        weapons = [
+            obj for obj in caller.contents
+            if isinstance(obj, AwtownWeapon)
+        ]
+
+        if not weapons:
+            caller.msg("You aren't carrying any weapons.")
+            return
+
+        wielded = []
+
+        # Find a main-hand weapon (prefer items with slot "weapon" or no slot)
+        main_candidates = [w for w in weapons if (w.db.slot or "weapon") == "weapon"]
+        off_candidates = [w for w in weapons if (w.db.slot or "weapon") == "offhand"]
+
+        # Equip main hand
+        if main_candidates:
+            main_item = main_candidates[0]
+            current = caller.get_equipped("weapon")
+            if current and current != main_item:
+                caller.unequip("weapon")
+            if not current or current != main_item:
+                caller.equip("weapon", main_item)
+                wielded.append(f"|w{main_item.key}|n (main hand)")
+        elif weapons and not off_candidates:
+            # Only weapons available, use first one for main hand
+            main_item = weapons[0]
+            current = caller.get_equipped("weapon")
+            if current and current != main_item:
+                caller.unequip("weapon")
+            if not current or current != main_item:
+                caller.equip("weapon", main_item)
+                wielded.append(f"|w{main_item.key}|n (main hand)")
+
+        # Equip offhand
+        already_wielded = caller.get_equipped("weapon")
+        off_choices = [w for w in off_candidates if w != already_wielded]
+        if not off_choices:
+            # Try any weapon not already wielded
+            off_choices = [w for w in weapons if w != already_wielded and w not in main_candidates[:1]]
+
+        if off_choices:
+            off_item = off_choices[0]
+            current = caller.get_equipped("offhand")
+            if current and current != off_item:
+                caller.unequip("offhand")
+            if not current or current != off_item:
+                caller.equip("offhand", off_item)
+                wielded.append(f"|w{off_item.key}|n (off hand)")
+
+        if wielded:
+            caller.msg(f"|gYou wield: {', '.join(wielded)}|n")
+            caller.location.msg_contents(
+                f"|w{caller.name}|n readies weapons.",
+                exclude=caller,
+            )
+        else:
+            caller.msg("You're already wielding everything you can.")
 
 
 class CmdUnwield(Command):

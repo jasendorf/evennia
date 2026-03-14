@@ -3,21 +3,26 @@ Container interaction commands: get, put, and drop
 ===================================================
 
 Overrides the default get/drop and the containers contrib's put with
-versions that handle duplicate item names and an 'all' modifier.
+versions that handle duplicate item names, an 'all' modifier, and
+numeric quantity prefixes.
 
 GET syntax:
     get <item>                        -- pick up from room (standard)
+    get <N> <item>                    -- pick up N matching items from room
     get <item> from <container>       -- get one item from container
     get all from <container>          -- get everything from container
     get all <item> from <container>   -- get all matching items from container
+    get <N> <item> from <container>   -- get N matching items from container
 
 PUT syntax:
     put <item> in <container>         -- put one item in container
+    put <N> <item> in <container>     -- put N matching items in container
     put all in <container>            -- put everything in container
     put all <item> in <container>     -- put all matching items in container
 
 DROP syntax:
     drop <item>                       -- drop one item into the room
+    drop <N> <item>                   -- drop N matching items
     drop all                          -- drop everything you carry
     drop all <item>                   -- drop all matching items
 
@@ -38,6 +43,32 @@ from evennia.commands.command import Command
 # ---------------------------------------------------------------------------
 # Shared helpers
 # ---------------------------------------------------------------------------
+
+def _parse_quantity(text):
+    """
+    Parse a quantity prefix from item text.
+
+    Returns:
+        (qty, item_query) where qty is int, "all", or 1 (default).
+        item_query is None only when text is bare "all".
+
+    Examples:
+        '3 torch'   -> (3, 'torch')
+        'all bread' -> ('all', 'bread')
+        'all'       -> ('all', None)
+        'sword'     -> (1, 'sword')
+    """
+    parts = text.split(None, 1)
+    if not parts:
+        return (1, text)
+    if parts[0].lower() == "all":
+        return ("all", parts[1] if len(parts) > 1 else None)
+    if parts[0].isdigit():
+        n = int(parts[0])
+        if n > 0 and len(parts) > 1:
+            return (n, parts[1])
+    return (1, text)
+
 
 def _find_one(searcher, query, candidates):
     """
@@ -92,6 +123,29 @@ def _find_all(query, candidates):
         if query_lower in obj.key.lower()
         or any(query_lower in a.lower() for a in obj.aliases.all())
     ]
+
+
+def _find_n(searcher, query, candidates, count):
+    """
+    Find up to *count* items matching query from candidates.
+
+    Args:
+        searcher: The character (for messaging).
+        query (str): Search string.
+        candidates (list): Objects to search through.
+        count (int or "all"): How many to return.
+
+    Returns:
+        list: Matching objects (up to count).
+    """
+    matches = _find_all(query, candidates)
+    if not matches:
+        return []
+    if count == "all":
+        return matches
+    if len(matches) < count:
+        searcher.msg(f"(Only {len(matches)} found.)")
+    return matches[:count]
 
 
 def _find_container(caller, query):
@@ -156,7 +210,9 @@ class CmdGet(Command):
 
     Usage:
         get <item>                        -- pick up from the room
+        get <N> <item>                    -- pick up N matching items
         get <item> from <container>       -- take one item from a container
+        get <N> <item> from <container>   -- take N matching items
         get all from <container>          -- take everything from a container
         get all <item> from <container>   -- take all matching items from container
 
@@ -164,8 +220,10 @@ class CmdGet(Command):
 
     Examples:
         get sword
+        get 3 torch
         get dagger from corpse
         get all from corpse
+        get 2 bread from barrel
         get all torch from pouch
     """
 
@@ -189,11 +247,12 @@ class CmdGet(Command):
             self._get_from_room(args)
 
     def _get_from_room(self, args):
-        """Standard get — pick up an item from the room."""
+        """Pick up item(s) from the room."""
         caller = self.caller
+        qty, item_query = _parse_quantity(args)
 
-        # Handle "get all" from room
-        if args.lower() == "all":
+        # "get all" (no item filter) — pick up everything
+        if qty == "all" and item_query is None:
             items = [
                 obj for obj in caller.location.contents
                 if obj != caller
@@ -216,23 +275,22 @@ class CmdGet(Command):
             )
             return
 
-        # Handle "get all <item>" from room
-        if args.lower().startswith("all "):
-            item_query = args[4:].strip()
+        # "get all <item>" or "get <N> <item>"
+        if qty != 1:
             room_items = [
                 obj for obj in caller.location.contents
                 if obj != caller
                 and obj not in caller.location.exits
                 and obj.access(caller, "get")
             ]
-            matches = _find_all(item_query, room_items)
+            matches = _find_n(caller, item_query, room_items, qty)
             if not matches:
                 caller.msg(f"You don't see any '{item_query}' here.")
                 return
             for item in matches:
                 item.move_to(caller, quiet=True)
             names = ", ".join(m.key for m in matches)
-            caller.msg(f"|gYou pick up: {names}|n")
+            caller.msg(f"|gYou pick up {len(matches)}x: {names}|n")
             caller.location.msg_contents(
                 f"|w{caller.name}|n picks up some items.",
                 exclude=caller,
@@ -244,9 +302,9 @@ class CmdGet(Command):
             obj for obj in caller.location.contents
             if obj != caller and obj not in caller.location.exits
         ]
-        item = _find_one(caller, args, room_items)
+        item = _find_one(caller, item_query, room_items)
         if not item:
-            caller.msg(f"You don't see '{args}' here.")
+            caller.msg(f"You don't see '{item_query}' here.")
             return
 
         if not item.access(caller, "get"):
@@ -267,7 +325,7 @@ class CmdGet(Command):
         """Get item(s) from a container."""
         caller = self.caller
 
-        # Parse: "item from container" or "all from container" or "all item from container"
+        # Parse: "item from container"
         idx = args.lower().index(" from ")
         item_part = args[:idx].strip()
         container_query = args[idx + 6:].strip()
@@ -295,8 +353,10 @@ class CmdGet(Command):
                 return container.at_pre_get_from(caller, item)
             return True
 
-        # "get all from container"
-        if item_part.lower() == "all":
+        qty, item_query = _parse_quantity(item_part)
+
+        # "get all from container" (no item filter)
+        if qty == "all" and item_query is None:
             count = 0
             taken = []
             for item in list(contents):
@@ -314,10 +374,9 @@ class CmdGet(Command):
                 caller.msg(f"You couldn't take anything from {container.key}.")
             return
 
-        # "get all <item> from container"
-        if item_part.lower().startswith("all "):
-            item_query = item_part[4:].strip()
-            matches = _find_all(item_query, contents)
+        # "get all <item> from container" or "get <N> <item> from container"
+        if qty != 1:
+            matches = _find_n(caller, item_query, contents, qty)
             if not matches:
                 caller.msg(f"You don't see any '{item_query}' in {container.key}.")
                 return
@@ -327,7 +386,7 @@ class CmdGet(Command):
                     item.move_to(caller, quiet=True)
                     taken.append(item.key)
             if taken:
-                caller.msg(f"|gYou take from {container.key}: {', '.join(taken)}|n")
+                caller.msg(f"|gYou take {len(taken)}x from {container.key}: {', '.join(taken)}|n")
                 caller.location.msg_contents(
                     f"|w{caller.name}|n takes items from {container.key}.",
                     exclude=caller,
@@ -337,9 +396,9 @@ class CmdGet(Command):
             return
 
         # Single item from container
-        item = _find_one(caller, item_part, contents)
+        item = _find_one(caller, item_query, contents)
         if not item:
-            caller.msg(f"You don't see '{item_part}' in {container.key}.")
+            caller.msg(f"You don't see '{item_query}' in {container.key}.")
             return
 
         if not _check_get(item):
@@ -364,6 +423,7 @@ class CmdPut(Command):
 
     Usage:
         put <item> in <container>         -- put one item
+        put <N> <item> in <container>     -- put N matching items
         put all in <container>            -- put everything you carry
         put all <item> in <container>     -- put all matching items
 
@@ -371,6 +431,7 @@ class CmdPut(Command):
 
     Examples:
         put torch in pouch
+        put 3 bread in chest
         put all in chest
         put all torch in pouch
     """
@@ -420,8 +481,10 @@ class CmdPut(Command):
                 return container.at_pre_put_in(caller, item)
             return True
 
-        # "put all in container"
-        if item_part.lower() == "all":
+        qty, item_query = _parse_quantity(item_part)
+
+        # "put all in container" (no item filter)
+        if qty == "all" and item_query is None:
             if not inventory:
                 caller.msg("You have nothing to put in there.")
                 return
@@ -440,21 +503,22 @@ class CmdPut(Command):
                 caller.msg(f"Couldn't put anything in {container.key}.")
             return
 
-        # "put all <item> in container"
-        if item_part.lower().startswith("all "):
-            item_query = item_part[4:].strip()
-            matches = _find_all(item_query, inventory)
+        # "put all <item> in container" or "put <N> <item> in container"
+        if qty != 1:
+            matches = _find_n(caller, item_query, inventory, qty)
             if not matches:
                 caller.msg(f"You aren't carrying any '{item_query}'.")
                 return
             count = 0
             for item in matches:
+                if item == container:
+                    continue
                 if _check_put(item):
                     item.move_to(container, quiet=True)
                     count += 1
             if count:
                 caller.msg(
-                    f"|gYou put {count} {item_query}(s) in {container.key}.|n"
+                    f"|gYou put {count}x {matches[0].key} in {container.key}.|n"
                 )
                 caller.location.msg_contents(
                     f"|w{caller.name}|n puts items in {container.key}.",
@@ -465,9 +529,9 @@ class CmdPut(Command):
             return
 
         # Single item
-        item = _find_one(caller, item_part, inventory)
+        item = _find_one(caller, item_query, inventory)
         if not item:
-            caller.msg(f"You aren't carrying '{item_part}'.")
+            caller.msg(f"You aren't carrying '{item_query}'.")
             return
 
         if item == container:
@@ -495,11 +559,13 @@ class CmdDrop(Command):
 
     Usage:
         drop <item>             -- drop one item
+        drop <N> <item>         -- drop N matching items
         drop all                -- drop everything you carry
         drop all <item>         -- drop all matching items
 
     Examples:
         drop sword
+        drop 2 torch
         drop all
         drop all torch
     """
@@ -522,8 +588,10 @@ class CmdDrop(Command):
             if not getattr(obj.db, "worn", None)
         ]
 
-        # "drop all"
-        if args.lower() == "all":
+        qty, item_query = _parse_quantity(args)
+
+        # "drop all" (no item filter)
+        if qty == "all" and item_query is None:
             if not inventory:
                 caller.msg("You aren't carrying anything to drop.")
                 return
@@ -538,17 +606,16 @@ class CmdDrop(Command):
             )
             return
 
-        # "drop all <item>"
-        if args.lower().startswith("all "):
-            item_query = args[4:].strip()
-            matches = _find_all(item_query, inventory)
+        # "drop all <item>" or "drop <N> <item>"
+        if qty != 1:
+            matches = _find_n(caller, item_query, inventory, qty)
             if not matches:
                 caller.msg(f"You aren't carrying any '{item_query}'.")
                 return
             for item in matches:
                 item.move_to(caller.location, quiet=True)
             caller.msg(
-                f"|gYou drop {len(matches)} {item_query}(s).|n"
+                f"|gYou drop {len(matches)}x {matches[0].key}.|n"
             )
             caller.location.msg_contents(
                 f"|w{caller.name}|n drops some items.",
@@ -557,9 +624,9 @@ class CmdDrop(Command):
             return
 
         # Single item
-        item = _find_one(caller, args, inventory)
+        item = _find_one(caller, item_query, inventory)
         if not item:
-            caller.msg(f"You aren't carrying '{args}'.")
+            caller.msg(f"You aren't carrying '{item_query}'.")
             return
 
         item.move_to(caller.location, quiet=True)

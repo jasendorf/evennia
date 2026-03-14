@@ -8,14 +8,18 @@ Usage:
     list                  - list wares of the merchant in this room
     list <npc name>       - list wares of a specific merchant
     buy <item>            - buy an item
+    buy <N> <item>        - buy N of an item
     buy <item> from <npc> - buy from a specific merchant
     sell <item>           - sell an item from your inventory
+    sell <N> <item>       - sell N matching items
+    sell all <item>       - sell all matching items
 """
 
 from evennia.commands.command import Command
 from evennia import create_object
 from typeclasses.characters import format_money
 from typeclasses.npcs import AwtownNPC
+from commands.command_containers import _parse_quantity, _find_n
 
 
 def _find_merchant(location, npc_name=None):
@@ -89,13 +93,16 @@ class CmdBuy(Command):
 
     Usage:
         buy <item>
+        buy <N> <item>
         buy <item> from <merchant name>
+        buy <N> <item> from <merchant name>
 
     The item name is matched against the merchant's inventory.
     Payment is deducted from your copper purse.
 
     Examples:
         buy torch
+        buy 5 torch
         buy simple tunic from Marta
     """
 
@@ -115,14 +122,23 @@ class CmdBuy(Command):
         npc_name = None
         if " from " in args.lower():
             parts = args.lower().split(" from ", 1)
-            item_query = parts[0].strip()
+            item_text = parts[0].strip()
             npc_name = parts[1].strip()
         else:
-            item_query = args.lower()
+            item_text = args.lower()
 
         merchant = _find_merchant(caller.location, npc_name)
         if not merchant:
             caller.msg("There's no merchant here to buy from.")
+            return
+
+        # Parse quantity
+        qty, item_query = _parse_quantity(item_text)
+        if item_query is None:
+            caller.msg("Buy what?")
+            return
+        if qty == "all":
+            caller.msg("You need to specify how many to buy.")
             return
 
         inventory = merchant.db.shop_inventory or []
@@ -136,43 +152,53 @@ class CmdBuy(Command):
             caller.msg(f"{merchant.name} doesn't carry anything called '{self.args.strip()}'.")
             return
 
-        price = match.get("price", 0)
+        price_each = match.get("price", 0)
+        total_price = price_each * qty
         purse = caller.db.copper or 0
 
-        if purse < price:
+        if purse < total_price:
             caller.msg(
-                f"|r{merchant.name} says, \"|wThat'll be {format_money(price)}. "
-                f"You're {format_money(price - purse)} short.\"|n"
+                f"|r{merchant.name} says, \"|wThat'll be {format_money(total_price)}. "
+                f"You're {format_money(total_price - purse)} short.\"|n"
             )
             return
 
         # Deduct cost
-        caller.spend_money(price)
+        caller.spend_money(total_price)
 
-        # Create the item in the caller's inventory
+        # Create the item(s) in the caller's inventory
         proto_key = match.get("key")
         item_name = match.get("name", "item")
         item_desc = match.get("desc", "A purchased item.")
 
-        if proto_key:
-            try:
-                from evennia.utils import spawner
-                objs = spawner.spawn(proto_key)
-                if objs:
-                    objs[0].move_to(caller, quiet=True)
-                    caller.msg(
-                        f"|g{merchant.name} hands you |w{item_name}|g for {format_money(price)}.|n"
-                    )
-                    return
-            except Exception:
-                pass
+        created = 0
+        for _ in range(qty):
+            if proto_key:
+                try:
+                    from evennia.utils import spawner
+                    objs = spawner.spawn(proto_key)
+                    if objs:
+                        objs[0].move_to(caller, quiet=True)
+                        created += 1
+                        continue
+                except Exception:
+                    pass
 
-        # Fallback: create a basic object
-        from evennia import create_object
-        from evennia.objects.objects import DefaultObject
-        obj = create_object(DefaultObject, key=item_name, location=caller)
-        obj.db.desc = item_desc
-        caller.msg(f"|g{merchant.name} hands you |w{item_name}|g for {format_money(price)}.|n")
+            # Fallback: create a basic object
+            from evennia.objects.objects import DefaultObject
+            obj = create_object(DefaultObject, key=item_name, location=caller)
+            obj.db.desc = item_desc
+            created += 1
+
+        if qty == 1:
+            caller.msg(
+                f"|g{merchant.name} hands you |w{item_name}|g for {format_money(total_price)}.|n"
+            )
+        else:
+            caller.msg(
+                f"|g{merchant.name} hands you {created}x |w{item_name}|g "
+                f"for {format_money(total_price)}.|n"
+            )
 
 
 class CmdSell(Command):
@@ -181,13 +207,16 @@ class CmdSell(Command):
 
     Usage:
         sell <item>
+        sell <N> <item>
+        sell all <item>
 
     The merchant pays you half the item's base value in copper.
     Not all merchants buy all items.
 
     Examples:
         sell torch
-        sell old sword
+        sell 3 dagger
+        sell all torch
     """
 
     key = "sell"
@@ -196,9 +225,9 @@ class CmdSell(Command):
 
     def func(self):
         caller = self.caller
-        query = self.args.strip().lower()
+        args = self.args.strip()
 
-        if not query:
+        if not args:
             caller.msg("Sell what?")
             return
 
@@ -207,13 +236,43 @@ class CmdSell(Command):
             caller.msg("There's no merchant here to sell to.")
             return
 
-        # Find item in caller's inventory
-        match = caller.search(query, location=caller, quiet=True)
-        if not match:
-            caller.msg(f"You don't have anything called '{self.args.strip()}'.")
+        qty, item_query = _parse_quantity(args)
+        if item_query is None:
+            caller.msg("Sell what?")
             return
-        if isinstance(match, list):
-            match = match[0]
+
+        inventory = list(caller.contents)
+
+        # Multiple items
+        if qty != 1:
+            matches = _find_n(caller, item_query, inventory, qty)
+            if not matches:
+                caller.msg(f"You don't have anything called '{item_query}'.")
+                return
+
+            total_sell = 0
+            count = 0
+            item_name = matches[0].key
+            for item in list(matches):
+                base_value = item.db.value or 2
+                sell_price = max(1, base_value // 2)
+                total_sell += sell_price
+                item.delete()
+                count += 1
+
+            caller.give_money(total_sell)
+            caller.msg(
+                f"|g{merchant.name} takes your {count}x |w{item_name}|g "
+                f"and pays you {format_money(total_sell)}.|n"
+            )
+            return
+
+        # Single item
+        from commands.command_containers import _find_one
+        match = _find_one(caller, item_query, inventory)
+        if not match:
+            caller.msg(f"You don't have anything called '{item_query}'.")
+            return
 
         base_value = match.db.value or 2
         sell_price = max(1, base_value // 2)

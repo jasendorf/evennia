@@ -564,6 +564,14 @@ class CombatHandler(DefaultScript):
                     f"for {dmg_str} damage!"
                 )
 
+        # Award weapon skill XP (players only, on successful hits)
+        is_attacker_mob = (
+            getattr(attacker.db, "is_mob", False)
+            if hasattr(attacker, "db") else False
+        )
+        if not is_attacker_mob and hasattr(attacker, "add_weapon_skill_xp"):
+            self._award_weapon_xp(attacker, defender, weapon_name is not None)
+
         # Post-damage status feedback
         is_defender_mob = (
             getattr(defender.db, "is_mob", False)
@@ -589,6 +597,55 @@ class CombatHandler(DefaultScript):
         elif not self._is_alive(defender):
             if defender not in deaths:
                 deaths.append(defender)
+
+    # ------------------------------------------------------------------
+    # Weapon skill XP
+    # ------------------------------------------------------------------
+
+    def _award_weapon_xp(self, attacker, defender, is_offhand=False):
+        """
+        Award weapon skill XP to a player after a successful hit.
+
+        Rules:
+            - 1 base XP per hit
+            - +1 XP per defender level above attacker level
+            - 0 XP if defender is 5+ levels below attacker
+            - Human race: +10% XP bonus (rounded down, minimum 1 total)
+        """
+        from contrib_dorfin.combat_rules import (
+            _weapon, _offhand, _weapon_category, _level,
+        )
+
+        # Determine weapon category
+        if is_offhand:
+            weapon = _offhand(attacker)
+        else:
+            weapon = _weapon(attacker)
+        category = _weapon_category(weapon) if weapon else "unarmed"
+
+        # Level difference check
+        atk_level = _level(attacker)
+        def_level = _level(defender)
+        level_diff = def_level - atk_level
+
+        # No XP if defender is 5+ levels below
+        if level_diff <= -5:
+            return
+
+        # Base 1 XP + bonus for higher-level defenders
+        xp = 1 + max(0, level_diff)
+
+        # Human racial bonus: +10%
+        race = getattr(attacker.db, "race", None) if hasattr(attacker, "db") else None
+        if race == "human":
+            xp = max(1, xp + xp // 10)
+
+        levels_gained = attacker.add_weapon_skill_xp(category, xp)
+        if levels_gained and levels_gained > 0:
+            attacker.msg(
+                f"|g  Your |w{category}|g skill has improved to "
+                f"level |w{attacker.get_weapon_skill(category)}|g!|n"
+            )
 
     # ------------------------------------------------------------------
     # Death handling

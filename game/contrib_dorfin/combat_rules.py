@@ -27,17 +27,18 @@ Formulas
 --------
 
     Initiative:     AGI + PER + rand(1,20) + LCK // 5
-    Melee attack:   rand(1,100) + STR + DEX + accuracy_mod
-    Ranged attack:  rand(1,100) + DEX + DEX + accuracy_mod
+    Melee attack:   rand(1,100) + STR + DEX + weapon_skill + accuracy_mod
+    Ranged attack:  rand(1,100) + DEX + DEX + weapon_skill + accuracy_mod
     Defense:        50 + AGI + PER + END // 2 + armor_bonus + shield_armor
     Shield block:   rand(1,100) <= block_chance  (checked after hit, before damage)
     Critical hit:   LCK // 2 % chance — bypasses shield block, x1.5 damage
-    1H damage:      roll(dice) + weapon.bonus + STR // 3 + buff_dmg
-    2H damage:      roll(dice) + weapon.bonus + STR // 2 + buff_dmg
-    Ranged damage:  roll(dice) + weapon.bonus + DEX // 3 + buff_dmg
-    Offhand damage: roll(dice) + weapon.bonus + STR // 6 + buff_dmg
-    Unarmed damage: 1d4 + STR // 4
+    1H damage:      roll(dice) + weapon.bonus + STR // 3 + skill // 2 + buff_dmg
+    2H damage:      roll(dice) + weapon.bonus + STR // 2 + skill // 2 + buff_dmg
+    Ranged damage:  roll(dice) + weapon.bonus + DEX // 3 + skill // 2 + buff_dmg
+    Offhand damage: roll(dice) + weapon.bonus + STR // 6 + skill // 2 + buff_dmg
+    Unarmed damage: 1d4 + STR // 4 + skill // 2  (monk: scaled dice + STR // 3)
     Damage reduction: max(0, (CON - 10) // 2)  — flat subtraction, min 1 final
+    Weapon skill XP: 1 + max(0, def_level - atk_level), 0 if 5+ below, human +10%
     Flee chance:    (AGI + LCK) vs (opponent_PER + 10)  -> percentage
     Rescue:         STR + CHA + rand(1,20) vs mob_WIS + mob_level * 2 + 10
     Consider:       compare effective power -> qualitative string
@@ -294,6 +295,58 @@ def _weapon_hands(weapon):
 OFFHAND_ACCURACY_PENALTY = -20
 
 
+def _weapon_category(weapon):
+    """
+    Return the weapon category string (e.g. "sword", "axe", "bow").
+
+    Defaults to "unarmed" if the weapon has no weapon_category attribute.
+    """
+    if weapon and hasattr(weapon, "db"):
+        return getattr(weapon.db, "weapon_category", "unarmed") or "unarmed"
+    return "unarmed"
+
+
+def _weapon_skill_level(combatant, category):
+    """
+    Return the combatant's weapon skill level for a category (0-30).
+
+    Uses get_weapon_skill() if available (player characters), otherwise 0.
+    Mobs have no weapon skills — returns 0.
+    """
+    if hasattr(combatant, "get_weapon_skill"):
+        try:
+            return combatant.get_weapon_skill(category)
+        except Exception:
+            return 0
+    return 0
+
+
+def _get_unarmed_dice(combatant):
+    """
+    Return the dice string for unarmed attacks.
+
+    Monks scale with unarmed weapon skill via MONK_UNARMED_DICE.
+    All others use 1d4.
+    """
+    char_class = None
+    if hasattr(combatant, "db"):
+        char_class = getattr(combatant.db, "char_class", None)
+
+    if char_class == "monk":
+        from contrib_dorfin.combat_config import MONK_UNARMED_DICE
+        skill = _weapon_skill_level(combatant, "unarmed")
+        # Find the highest threshold at or below current skill
+        best_dice = "1d6"
+        for threshold in sorted(MONK_UNARMED_DICE.keys()):
+            if skill >= threshold:
+                best_dice = MONK_UNARMED_DICE[threshold]
+            else:
+                break
+        return best_dice
+
+    return "1d4"
+
+
 def _armor_bonus(combatant, default=0):
     """
     Read the combatant's effective armor bonus.
@@ -372,10 +425,11 @@ def get_attack_roll(attacker, defender, accuracy_mod=0):
     """
     Calculate an attack roll value.
 
-    Melee:  rand(1,100) + STR + DEX + accuracy_mod
-    Ranged: rand(1,100) + DEX + DEX + accuracy_mod
+    Melee:  rand(1,100) + STR + DEX + weapon_skill + accuracy_mod
+    Ranged: rand(1,100) + DEX + DEX + weapon_skill + accuracy_mod
 
     The weapon_type of the main weapon determines which formula is used.
+    Weapon skill adds +1 per skill level (0-30).
 
     Args:
         attacker: The attacking combatant.
@@ -390,11 +444,15 @@ def get_attack_roll(attacker, defender, accuracy_mod=0):
     wtype = _weapon_type(weapon)
     dex_val = _stat(attacker, "dex")
 
+    # Weapon skill bonus: +1 per skill level
+    category = _weapon_category(weapon) if weapon else "unarmed"
+    skill_bonus = _weapon_skill_level(attacker, category)
+
     if wtype == "ranged":
-        return randint(1, 100) + dex_val + dex_val + accuracy_mod
+        return randint(1, 100) + dex_val + dex_val + skill_bonus + accuracy_mod
     else:
         str_val = _stat(attacker, "str")
-        return randint(1, 100) + str_val + dex_val + accuracy_mod
+        return randint(1, 100) + str_val + dex_val + skill_bonus + accuracy_mod
 
 
 def get_defense_value(defender):
@@ -435,13 +493,13 @@ def get_damage(attacker, defender, offhand_attack=False):
     Calculate damage dealt by a successful attack.
 
     With weapon:
-        1H melee:  roll(dice) + weapon.bonus + STR // 3 + buff_dmg
-        2H melee:  roll(dice) + weapon.bonus + STR // 2 + buff_dmg
-        Ranged:    roll(dice) + weapon.bonus + DEX // 3 + buff_dmg
-        Offhand:   roll(offhand.dice) + offhand.bonus + STR // 6 + buff_dmg
+        1H melee:  roll(dice) + weapon.bonus + STR // 3 + skill // 2 + buff_dmg
+        2H melee:  roll(dice) + weapon.bonus + STR // 2 + skill // 2 + buff_dmg
+        Ranged:    roll(dice) + weapon.bonus + DEX // 3 + skill // 2 + buff_dmg
+        Offhand:   roll(offhand.dice) + offhand.bonus + STR // 6 + skill // 2 + buff_dmg
 
     Without weapon (unarmed):
-        1d4 + STR // 4
+        1d4 + STR // 4 + skill // 2  (monk: scaled dice + STR // 3 + skill // 2)
 
     Args:
         attacker: The attacking combatant.
@@ -474,11 +532,23 @@ def get_damage(attacker, defender, offhand_attack=False):
         else:
             stat_bonus = str_val // 3
 
-        total = base + weapon_bonus + stat_bonus + buff_dmg
+        # Weapon skill damage bonus: +1 per 2 skill levels
+        category = _weapon_category(weapon)
+        skill_dmg = _weapon_skill_level(attacker, category) // 2
+
+        total = base + weapon_bonus + stat_bonus + skill_dmg + buff_dmg
     else:
-        # Unarmed
-        base = roll_dice("1d4")
-        total = base + str_val // 4
+        # Unarmed — monks scale via MONK_UNARMED_DICE
+        unarmed_dice = _get_unarmed_dice(attacker)
+        base = roll_dice(unarmed_dice)
+        skill_dmg = _weapon_skill_level(attacker, "unarmed") // 2
+        # Monks use STR//3, others STR//4
+        char_class = getattr(attacker.db, "char_class", None) if hasattr(attacker, "db") else None
+        if char_class == "monk":
+            stat_bonus = str_val // 3
+        else:
+            stat_bonus = str_val // 4
+        total = base + stat_bonus + skill_dmg
 
     return max(1, total)
 

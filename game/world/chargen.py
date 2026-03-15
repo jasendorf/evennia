@@ -584,24 +584,46 @@ def _calc_points_spent(wip_stats, base_stats):
     return sum(wip_stats[s] - base_stats[s] for s in STAT_KEYS)
 
 
-def _format_stat_table(wip_stats, base_stats):
-    """Build a compact stat table with alternating highlight rows."""
+def _format_stat_table(wip_stats, base_stats, raw_rolls=None, race_key=None):
+    """Build a compact stat table with Roll, Race, Base, Alloc, Total columns."""
     spent = _calc_points_spent(wip_stats, base_stats)
     remaining = BONUS_POINTS - spent
 
-    lines = [f"  |w{'Stat':<5} {'Base':>4}  {'Alloc':>5}  {'Total':>5}|n"]
-    lines.append("  " + "-" * 25)
+    # Get racial mods for the Race column
+    race_mods = {}
+    if race_key:
+        rdata = STARTER_RACES.get(race_key) or UNLOCKABLE_RACES.get(race_key, {})
+        race_mods = rdata.get("stat_mods", {})
+
+    show_race = raw_rolls is not None and race_key is not None
+
+    if show_race:
+        lines = [f"  |w{'Stat':<5} {'Roll':>4}  {'Race':>4}  {'Base':>4}  {'Alloc':>5}  {'Total':>5}|n"]
+        lines.append("  " + "-" * 37)
+    else:
+        lines = [f"  |w{'Stat':<5} {'Base':>4}  {'Alloc':>5}  {'Total':>5}|n"]
+        lines.append("  " + "-" * 25)
 
     for i, s in enumerate(STAT_KEYS):
         base = base_stats[s]
         alloc = wip_stats[s] - base
         total = wip_stats[s]
         alloc_str = f"|g{alloc:>+4}|n" if alloc else "   -"
-        # Alternate rows: dim background on odd rows
-        if i % 2 == 1:
-            lines.append(f"  |x{BASE_STATS[s]['abbr']:<5} {base:>4}  {alloc_str}|x  {total:>5}|n")
+        abbr = BASE_STATS[s]['abbr']
+
+        if show_race:
+            roll = raw_rolls[s]
+            mod = race_mods.get(s, 0)
+            mod_str = f"|g{mod:>+4}|n" if mod > 0 else f"|r{mod:>+4}|n" if mod < 0 else "   -"
+            if i % 2 == 1:
+                lines.append(f"  |x{abbr:<5} {roll:>4}  {mod_str}|x  {base:>4}  {alloc_str}|x  {total:>5}|n")
+            else:
+                lines.append(f"  |w{abbr:<5}|n {roll:>4}  {mod_str}  {base:>4}  {alloc_str}  |w{total:>5}|n")
         else:
-            lines.append(f"  |w{BASE_STATS[s]['abbr']:<5}|n {base:>4}  {alloc_str}  |w{total:>5}|n")
+            if i % 2 == 1:
+                lines.append(f"  |x{abbr:<5} {base:>4}  {alloc_str}|x  {total:>5}|n")
+            else:
+                lines.append(f"  |w{abbr:<5}|n {base:>4}  {alloc_str}  |w{total:>5}|n")
 
     lines.append("")
     lines.append(f"  |wBonus points remaining: {remaining}/{BONUS_POINTS}|n")
@@ -945,12 +967,13 @@ def menunode_stats(caller, raw_string="", **kwargs):
     # Roll base stats on first visit (or if rerolled)
     if not char.db.base_stats:
         rolls = _roll_base_stats()
+        char.db.raw_rolls = dict(rolls)
         char.db.base_stats = _apply_racial_mods(rolls, race_key)
         char.db.wip_stats = dict(char.db.base_stats)
 
     base = char.db.base_stats
     wip = char.db.wip_stats
-    stat_table = _format_stat_table(wip, base)
+    stat_table = _format_stat_table(wip, base, char.db.raw_rolls, race_key)
 
     help_text = (
         "|wStat Allocation Help|n\n\n"
@@ -1011,6 +1034,7 @@ def _handle_stat_input(caller, raw_string, **kwargs):
 
     if cmd in ("reroll", "roll", "re"):
         rolls = _roll_base_stats()
+        char.db.raw_rolls = dict(rolls)
         char.db.base_stats = _apply_racial_mods(rolls, race_key)
         char.db.wip_stats = dict(char.db.base_stats)
         caller.msg("|yNew stats rolled!|n")
@@ -1105,6 +1129,9 @@ def menunode_summary(caller, raw_string="", **kwargs):
         )
     stat_block = "\n".join(stat_rows)
 
+    con = wip.get("con", 10)
+    starting_hp = 80 + con * 2
+
     text = (
         f"|w=============================================\n"
         f"  Character Summary\n"
@@ -1117,6 +1144,7 @@ def menunode_summary(caller, raw_string="", **kwargs):
         f"  |wStats:|n\n"
         f"{stat_block}\n"
         f"\n"
+        f"  |wHP:|n        {starting_hp}\n"
         f"  |wLanguages:|n {langs}\n"
         f"  |wTraits:|n    {traits}\n"
         f"\n"
@@ -1174,6 +1202,14 @@ def menunode_end(caller, raw_string="", **kwargs):
             if trait:
                 trait.base = wip[s]
 
+        # Starting HP: 80 + CON * 2 (CON 10 = 100 baseline)
+        con = wip.get("con", 10)
+        starting_hp = 80 + con * 2
+        hp_trait = char.traits.get("hp")
+        if hp_trait:
+            hp_trait.base = starting_hp
+            hp_trait.current = hp_trait.max
+
     # Set languages
     char.db.languages = {lang: 1.0 for lang in rdata["languages"]}
 
@@ -1194,6 +1230,7 @@ def menunode_end(caller, raw_string="", **kwargs):
     # Clean up work-in-progress data
     char.attributes.remove("base_stats")
     char.attributes.remove("wip_stats")
+    char.attributes.remove("raw_rolls")
     char.attributes.remove("chargen_step")
 
     text = dedent(f"""\

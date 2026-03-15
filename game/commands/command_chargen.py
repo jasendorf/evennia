@@ -41,6 +41,7 @@ class CmdChargen(Command):
         target.db.languages = {"common": 1.0}
         target.db.base_stats = None
         target.db.wip_stats = None
+        target.db.raw_rolls = None
 
         # Reset stats to base values
         if hasattr(target, "traits") and target.traits:

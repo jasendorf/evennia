@@ -19,8 +19,11 @@ Contains:
 MAX_CHARACTER_LEVEL = 90
 
 # XP required to reach each level (index = level, so [0] is unused).
-# Formula: int(level ** 2.3 * 15)
-CHARACTER_LEVEL_XP = [0] + [int(lvl ** 2.3 * 15) for lvl in range(1, MAX_CHARACTER_LEVEL + 1)]
+# Blended formula: ((level^2.3 * 28) + (level^2.5 * 15)) / 2
+CHARACTER_LEVEL_XP = [0] + [
+    int(((lvl ** 2.3 * 28) + (lvl ** 2.5 * 15)) / 2)
+    for lvl in range(1, MAX_CHARACTER_LEVEL + 1)
+]
 
 # Levels that grant a stat point (every 5 levels, 18 total)
 STAT_POINT_LEVELS = list(range(5, MAX_CHARACTER_LEVEL + 1, 5))

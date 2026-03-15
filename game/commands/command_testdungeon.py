@@ -181,7 +181,8 @@ def build_test_dungeon(caller):
         "  |cwest|n   — Shop & Consumables\n"
         "  |cup|n     — Loot Testing (mob with drops)\n"
         "  |cdown|n   — Advanced Combat Wing\n"
-        "  |cnortheast|n — Level-Up Chamber (500 XP pinata)",
+        "  |cnortheast|n — Level-Up Chamber (500 XP pinata)\n"
+        "  |csoutheast|n — Class & Race Testing (proficiency/milestones)",
         is_safe=True,
     )
 
@@ -436,14 +437,14 @@ def build_test_dungeon(caller):
         "|wWeapon Skill Training|n",
         "Rows of straw targets animate when struck. They fall easily "
         "but keep coming back.\n\n"
-        "|yTests:|n weapon skill XP gain, skill level-ups\n"
+        "|yTests:|n weapon skill XP gain, skill level-ups, milestones\n"
         "|yInstructions:|n\n"
         "  1. Equip a weapon of the category you want to train\n"
         "  2. |ckill target|n — weak, fast kills\n"
-        "  3. After several kills, check weapon skills\n"
-        "  4. (Note: weapon skill XP is Phase D — not yet wired to "
-        "combat. This room is ready for when it is.)\n"
-        "  5. Targets respawn every 15 seconds",
+        "  3. |cskills|n — check weapon skill progress\n"
+        "  4. |cskills <category>|n — see milestones and XP bar\n"
+        "  5. At skill 3: first milestone unlocks!\n"
+        "  6. Targets respawn every 15 seconds",
         is_safe=False,
     )
     _mob(grind, "a straw target", hp=10, level=1, damage_dice="1d3",
@@ -538,6 +539,47 @@ def build_test_dungeon(caller):
     _exit(hub, levelup, "northeast", ["levelup", "xp", "ne"])
     _exit(levelup, hub, "northwest", ["hub", "nw"])
 
+    # ------------------------------------------------------------------
+    # 15. CLASS & RACE TESTING — proficiency, race mods, milestones
+    # ------------------------------------------------------------------
+    classrace = _room(
+        "|wClass & Race Testing|n",
+        "A hall of mirrors reflecting different versions of yourself. "
+        "Weapon racks line the walls with one of every type.\n\n"
+        "|yTests:|n class proficiency warnings, race mods, score display, "
+        "skills display, milestone effects\n"
+        "|yInstructions:|n\n"
+        "  1. |cscore|n — check your class, race, and combat stats\n"
+        "  2. |cskills|n — see weapon skill summary\n"
+        "  3. |cskills sword|n — see milestones for a category\n"
+        "  4. |cwield test sword|n — proficient classes: no warning\n"
+        "  5. |cwield test bow|n — check for unfamiliar/opposed warning\n"
+        "  6. Try different weapons to see proficiency messages\n"
+        "  7. Kill dummies in other rooms, then come back to check\n"
+        "     skill progress and unlocked milestones\n\n"
+        "|yClass Tiers:|n\n"
+        "  |gProficient|n — no penalty (weapons your class knows)\n"
+        "  |yUnfamiliar|n — -15 attack, -3 damage\n"
+        "  |rOpposed|n    — -25 attack, -5 damage (e.g. monk + sword)\n\n"
+        "|yRace Mods:|n flat attack bonus/penalty per weapon type\n"
+        "  (e.g. elf: +5 bow, +2 sword, -3 club)",
+        is_safe=True,
+    )
+    # One of every weapon category for testing proficiency warnings
+    _weapon(classrace, "test sword", "1d6", category="sword")
+    _weapon(classrace, "test dagger", "1d3+1", category="dagger")
+    _weapon(classrace, "test axe", "1d8", category="axe")
+    _weapon(classrace, "test club", "1d6", category="club")
+    _weapon(classrace, "test staff", "1d4+1", category="staff", hands=2)
+    _weapon(classrace, "test polearm", "1d8", category="polearm", hands=2)
+    _weapon(classrace, "test bow", "1d6", category="bow", wtype="ranged", hands=2)
+    _weapon(classrace, "test crossbow", "1d8", category="crossbow", wtype="ranged", hands=2)
+    _weapon(classrace, "test shield", "1d2", category="shield", wtype="shield",
+            slot="offhand", block_chance=15, armor_bonus=5)
+
+    _exit(hub, classrace, "southeast", ["class", "race", "se"])
+    _exit(classrace, hub, "northwest", ["hub", "back", "nw"])
+
     return hub
 
 
@@ -624,7 +666,7 @@ class CmdTestDungeon(Command):
         self.caller.move_to(hub, quiet=True)
         self.caller.msg(
             "\n|g=== Test Dungeon Created ===|n\n"
-            f"|w14 rooms|n with mobs, weapons, armor, shops, and consumables.\n"
+            f"|w15 rooms|n with mobs, weapons, armor, shops, and consumables.\n"
             "Everything is tagged — use |w@testdungeon/teardown|n to clean up.\n"
             "Type |wlook|n to see the hub directions.\n"
         )

@@ -468,8 +468,10 @@ class CmdScore(Command):
         stats
         sc
 
-    Shows your health, base stats, experience, level, currency,
-    hunger/thirst, and active buffs.
+    Shows your health, base stats, experience, level, class, race,
+    weapon skills, combat stats, currency, and active buffs.
+
+    See also: skills (detailed weapon skill view)
     """
 
     key = "score"
@@ -479,10 +481,17 @@ class CmdScore(Command):
 
     def func(self):
         caller = self.caller
+        level = caller.db.level or 1
+
+        # Header with class/race
+        char_class = getattr(caller.db, "char_class", None) or ""
+        race = getattr(caller.db, "race", None) or ""
+        identity = " ".join(p for p in [race.replace("_", " ").title(), char_class.title()] if p)
+        subtitle = f"Level {level} {identity}" if identity else f"Level {level}"
 
         lines = [
             f"|w{'=' * 50}|n",
-            f"|w  {caller.name}|n   Level {caller.db.level or 1}",
+            f"|w  {caller.name}|n   {subtitle}",
             f"|w{'=' * 50}|n",
         ]
 
@@ -493,7 +502,6 @@ class CmdScore(Command):
         lines.append(f"  Health:  {hp_bar} {hp_color}{hp}/{hp_max}|n")
 
         xp = caller.db.xp or 0
-        level = caller.db.level or 1
         from contrib_dorfin.combat_config import CHARACTER_LEVEL_XP, MAX_CHARACTER_LEVEL
         if level >= MAX_CHARACTER_LEVEL:
             lines.append(f"  XP:      |w{xp}|n (|cMAX LEVEL|n)")
@@ -516,6 +524,7 @@ class CmdScore(Command):
 
         lines.append(f"  Purse:   |y{caller.money_string()}|n")
 
+        # --- Stats ---
         lines.append(f"\n|w  {'--- Stats ---':^46}|n")
 
         stat_names = {
@@ -538,6 +547,38 @@ class CmdScore(Command):
                 right_str = ""
 
             lines.append(f"{left_str:<25}{right_str}")
+
+        # --- Derived Combat Stats ---
+        lines.append(f"\n|w  {'--- Combat ---':^46}|n")
+        con = caller.get_stat("con") if hasattr(caller, "get_stat") else 10
+        lck = caller.get_stat("lck") if hasattr(caller, "get_stat") else 10
+        dr = max(0, (con - 10) // 2)
+        base_crit = lck // 2
+        lines.append(f"  Damage Reduction: |w{dr}|n    Crit Chance: |w{base_crit}%|n")
+
+        # --- Weapon Skills (compact) ---
+        weapon_skills = caller.db.weapon_skills or {}
+        trained = {cat: data for cat, data in weapon_skills.items()
+                   if data.get("level", 0) > 0 or data.get("xp", 0) > 0}
+        if trained:
+            from contrib_dorfin.combat_config import (
+                WEAPON_SKILL_XP_THRESHOLDS, MAX_WEAPON_SKILL_LEVEL,
+            )
+            lines.append(f"\n|w  {'--- Weapon Skills ---':^46}|n")
+            for cat in sorted(trained.keys()):
+                data = trained[cat]
+                sk_level = data.get("level", 0)
+                sk_xp = data.get("xp", 0)
+                if sk_level >= MAX_WEAPON_SKILL_LEVEL:
+                    progress = "|cMAX|n"
+                else:
+                    xp_cur = WEAPON_SKILL_XP_THRESHOLDS[sk_level]
+                    xp_nxt = WEAPON_SKILL_XP_THRESHOLDS[sk_level + 1]
+                    xp_into = sk_xp - xp_cur
+                    xp_need = xp_nxt - xp_cur
+                    pct = int(100 * xp_into / xp_need) if xp_need > 0 else 0
+                    progress = f"{pct}%"
+                lines.append(f"  {cat:<12} Lv |w{sk_level:>2}|n  ({progress})")
 
         if hasattr(caller, "needs"):
             lines.append(f"\n|w  {'--- Needs ---':^46}|n")
@@ -644,6 +685,182 @@ class CmdTrain(Command):
         # (future levels will use the new CON automatically)
         if args == "con":
             caller.msg("|xNote: Future level-ups will benefit from your higher CON.|n")
+
+
+# ---------------------------------------------------------------------------
+# skills — detailed weapon skill view
+# ---------------------------------------------------------------------------
+
+class CmdSkills(Command):
+    """
+    Show your weapon skills in detail with milestones.
+
+    Usage:
+        skills
+        skills <category>
+
+    Without arguments, lists all weapon categories you've trained.
+    With a category name, shows XP progress, active perks, and
+    upcoming milestones for that weapon type.
+
+    Examples:
+        skills
+        skills sword
+        skills bow
+    """
+
+    key = "skills"
+    help_category = "General"
+    locks = "cmd:all()"
+
+    def func(self):
+        caller = self.caller
+        args = self.args.strip().lower()
+
+        from contrib_dorfin.combat_config import (
+            WEAPON_CATEGORIES, WEAPON_SKILL_XP_THRESHOLDS,
+            MAX_WEAPON_SKILL_LEVEL, WEAPON_MILESTONES,
+        )
+
+        weapon_skills = caller.db.weapon_skills or {}
+
+        if args:
+            # Detailed view for one category
+            if args not in WEAPON_CATEGORIES:
+                caller.msg(
+                    f"'{args}' is not a weapon category. Valid: "
+                    f"{', '.join(WEAPON_CATEGORIES)}"
+                )
+                return
+
+            data = weapon_skills.get(args, {"xp": 0, "level": 0})
+            sk_level = data.get("level", 0)
+            sk_xp = data.get("xp", 0)
+
+            lines = [f"|w=== {args.title()} Skill ===|n"]
+
+            # Level + XP bar
+            if sk_level >= MAX_WEAPON_SKILL_LEVEL:
+                lines.append(f"  Level: |w{sk_level}|n / {MAX_WEAPON_SKILL_LEVEL} (|cMAX|n)")
+                lines.append(f"  Total XP: |w{sk_xp}|n")
+            else:
+                xp_cur = WEAPON_SKILL_XP_THRESHOLDS[sk_level]
+                xp_nxt = WEAPON_SKILL_XP_THRESHOLDS[sk_level + 1]
+                xp_into = sk_xp - xp_cur
+                xp_need = xp_nxt - xp_cur
+                bar = _render_bar(xp_into, xp_need)
+                lines.append(f"  Level: |w{sk_level}|n / {MAX_WEAPON_SKILL_LEVEL}")
+                lines.append(f"  XP:    {bar} |w{xp_into}/{xp_need}|n to level {sk_level + 1}")
+
+            # Per-level bonuses
+            atk_bonus = sk_level
+            dmg_bonus = sk_level // 2
+            lines.append(f"  Bonuses: +{atk_bonus} attack, +{dmg_bonus} damage")
+
+            # Milestones
+            milestones = WEAPON_MILESTONES.get(args, [])
+            if milestones:
+                lines.append(f"\n|w  Milestones:|n")
+                for lvl, effect_type, value, name in milestones:
+                    if sk_level >= lvl:
+                        lines.append(f"  |g  [{lvl:>2}] {name}|n — {_describe_effect(effect_type, value)}")
+                    else:
+                        lines.append(f"  |x  [{lvl:>2}] {name}|n — |x{_describe_effect(effect_type, value)}|n")
+
+            # Proficiency
+            char_class = getattr(caller.db, "char_class", None)
+            if char_class:
+                from contrib_dorfin.combat_config import CLASS_PROFICIENCIES, CLASS_OPPOSED
+                cls = char_class.lower()
+                opposed = CLASS_OPPOSED.get(cls, [])
+                proficient = CLASS_PROFICIENCIES.get(cls, [])
+                if args in opposed:
+                    lines.append(f"\n  |rOpposed|n — {char_class}s suffer -25 attack, -5 damage")
+                elif args in proficient:
+                    lines.append(f"\n  |gProficient|n — no penalties")
+                else:
+                    lines.append(f"\n  |yUnfamiliar|n — {char_class}s suffer -15 attack, -3 damage")
+
+            caller.msg("\n".join(lines))
+            return
+
+        # Summary view — all categories
+        trained = {cat: data for cat, data in weapon_skills.items()
+                   if data.get("level", 0) > 0 or data.get("xp", 0) > 0}
+
+        if not trained:
+            caller.msg(
+                "You haven't trained any weapon skills yet.\n"
+                "Fight with a weapon to gain skill XP. Use |wskills <category>|n "
+                "to see details for any weapon type."
+            )
+            return
+
+        lines = [f"|w{'=' * 40}|n", f"|w  Weapon Skills|n", f"|w{'=' * 40}|n"]
+
+        for cat in sorted(trained.keys()):
+            data = trained[cat]
+            sk_level = data.get("level", 0)
+            sk_xp = data.get("xp", 0)
+
+            if sk_level >= MAX_WEAPON_SKILL_LEVEL:
+                progress = "|cMAX|n"
+            else:
+                xp_cur = WEAPON_SKILL_XP_THRESHOLDS[sk_level]
+                xp_nxt = WEAPON_SKILL_XP_THRESHOLDS[sk_level + 1]
+                xp_into = sk_xp - xp_cur
+                xp_need = xp_nxt - xp_cur
+                pct = int(100 * xp_into / xp_need) if xp_need > 0 else 0
+                bar = _render_bar(xp_into, xp_need, width=10)
+                progress = f"{bar} {pct}%"
+
+            # Count active milestones
+            milestones = WEAPON_MILESTONES.get(cat, [])
+            active = sum(1 for lvl, *_ in milestones if sk_level >= lvl)
+            total = len(milestones)
+
+            lines.append(
+                f"  {cat:<12} Lv |w{sk_level:>2}|n  {progress}"
+                f"  |x({active}/{total} perks)|n"
+            )
+
+        lines.append(f"|w{'=' * 40}|n")
+        lines.append("Use |wskills <category>|n for details.")
+        caller.msg("\n".join(lines))
+
+
+def _describe_effect(effect_type, value):
+    """Human-readable description of a milestone effect."""
+    descriptions = {
+        "passive_initiative": f"+{value} initiative",
+        "passive_accuracy": f"+{value} accuracy",
+        "passive_defense": f"+{value} defense",
+        "passive_damage": f"+{value} damage",
+        "passive_block": f"{value}% parry chance",
+        "crit_chance_bonus": f"+{value}% crit chance",
+        "crit_multiplier": f"x{value} crit damage",
+        "armor_ignore_pct": f"ignore {value}% armor",
+        "execute_threshold": f"+50% damage vs targets below {value}% HP",
+        "stun_chance": f"{value}% stun chance",
+        "bonus_attack_chance": f"{value}% bonus attack",
+        "riposte_chance": f"{value}% counter on enemy miss",
+        "backstab_multiplier": f"x{value} first attack damage",
+        "damage_reduction_chance": f"{value}% chance to debuff target damage",
+        "on_kill_cleave": f"on kill: {value}% damage to another enemy",
+        "on_kill_attack_all": "on kill: attack all remaining enemies",
+        "first_round_attack_all": "first round: attack all enemies",
+        "first_attack_defense": f"+{value} defense until first hit taken",
+        "unarmed_dice_upgrade": "unarmed dice upgrade (1d4 -> 1d6)",
+    }
+    if effect_type == "berserker":
+        return f"+{value[0]} damage, -{value[1]} defense"
+    if effect_type == "bleed":
+        return f"{value[0]} damage/round for {value[1]} rounds"
+    if effect_type == "armor_shatter":
+        return f"reduce target armor by {value}"
+    if effect_type == "defense_shatter":
+        return f"{value[0]}% chance to reduce enemy defense by {value[1]}"
+    return descriptions.get(effect_type, f"{effect_type}: {value}")
 
 
 # ---------------------------------------------------------------------------

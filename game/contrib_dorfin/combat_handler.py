@@ -439,7 +439,9 @@ class CombatHandler(DefaultScript):
             else:
                 damage = result["damage"]
                 self._apply_damage_and_message(
-                    attacker, defender, damage, deaths, atk_name, def_name
+                    attacker, defender, damage, deaths, atk_name, def_name,
+                    crit=result.get("crit", False),
+                    damage_reduced=result.get("damage_reduced", 0),
                 )
         else:
             # Miss
@@ -488,7 +490,9 @@ class CombatHandler(DefaultScript):
                 damage = result["damage"]
                 self._apply_damage_and_message(
                     attacker, defender, damage, deaths,
-                    atk_name, def_name, weapon_name=off_name
+                    atk_name, def_name, weapon_name=off_name,
+                    crit=result.get("crit", False),
+                    damage_reduced=result.get("damage_reduced", 0),
                 )
         else:
             if room:
@@ -498,7 +502,8 @@ class CombatHandler(DefaultScript):
                 )
 
     def _apply_damage_and_message(self, attacker, defender, damage, deaths,
-                                   atk_name, def_name, weapon_name=None):
+                                   atk_name, def_name, weapon_name=None,
+                                   crit=False, damage_reduced=0):
         """
         Apply damage to a defender and send combat messages.
 
@@ -513,8 +518,14 @@ class CombatHandler(DefaultScript):
             def_name (str): Defender display name.
             weapon_name (str or None): If set, include in hit message
                                        (used for offhand attacks).
+            crit (bool): Whether this was a critical hit.
+            damage_reduced (int): Amount absorbed by damage reduction.
         """
         room = self.obj
+
+        # Critical hit announcement
+        if crit and room:
+            room.msg_contents(f"  |r*** CRITICAL HIT ***|n")
 
         # Record HP before damage to detect kills
         hp_before = self._get_hp(defender)
@@ -537,15 +548,20 @@ class CombatHandler(DefaultScript):
             hit_verb = "scratches"
 
         if room:
+            # Build damage suffix with optional DR note
+            dmg_str = f"|w{damage}|n"
+            if damage_reduced > 0:
+                dmg_str += f" (toughness absorbs {damage_reduced})"
+
             if weapon_name:
                 room.msg_contents(
                     f"  {atk_name} {hit_verb} {def_name} "
-                    f"with {weapon_name} for |w{damage}|n damage!"
+                    f"with {weapon_name} for {dmg_str} damage!"
                 )
             else:
                 room.msg_contents(
                     f"  {atk_name} {hit_verb} {def_name} "
-                    f"for |w{damage}|n damage!"
+                    f"for {dmg_str} damage!"
                 )
 
         # Post-damage status feedback

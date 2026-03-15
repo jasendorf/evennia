@@ -29,13 +29,15 @@ Formulas
     Initiative:     AGI + PER + rand(1,20) + LCK // 5
     Melee attack:   rand(1,100) + STR + DEX + accuracy_mod
     Ranged attack:  rand(1,100) + DEX + DEX + accuracy_mod
-    Defense:        50 + AGI + PER + armor_bonus + shield_armor
+    Defense:        50 + AGI + PER + END // 2 + armor_bonus + shield_armor
     Shield block:   rand(1,100) <= block_chance  (checked after hit, before damage)
+    Critical hit:   LCK // 2 % chance — bypasses shield block, x1.5 damage
     1H damage:      roll(dice) + weapon.bonus + STR // 3 + buff_dmg
     2H damage:      roll(dice) + weapon.bonus + STR // 2 + buff_dmg
     Ranged damage:  roll(dice) + weapon.bonus + DEX // 3 + buff_dmg
     Offhand damage: roll(dice) + weapon.bonus + STR // 6 + buff_dmg
     Unarmed damage: 1d4 + STR // 4
+    Damage reduction: max(0, (CON - 10) // 2)  — flat subtraction, min 1 final
     Flee chance:    (AGI + LCK) vs (opponent_PER + 10)  -> percentage
     Rescue:         STR + CHA + rand(1,20) vs mob_WIS + mob_level * 2 + 10
     Consider:       compare effective power -> qualitative string
@@ -399,7 +401,7 @@ def get_defense_value(defender):
     """
     Calculate the defense value an attack must meet or exceed to hit.
 
-    Formula: 50 + AGI + PER + armor_bonus + shield_armor
+    Formula: 50 + AGI + PER + END // 2 + armor_bonus + shield_armor
 
     If the defender has a shield in their offhand, its armor_bonus is
     added to the defense total (passive benefit, separate from block).
@@ -412,6 +414,7 @@ def get_defense_value(defender):
     """
     agi = _stat(defender, "agi")
     per = _stat(defender, "per")
+    end = _stat(defender, "end")
     armor = _armor_bonus(defender)
 
     # Shield passive armor bonus
@@ -420,7 +423,7 @@ def get_defense_value(defender):
     if offhand and _weapon_type(offhand) == "shield":
         shield_armor = getattr(offhand.db, "armor_bonus", 0) if hasattr(offhand, "db") else 0
 
-    return 50 + agi + per + armor + shield_armor
+    return 50 + agi + per + end // 2 + armor + shield_armor
 
 
 # ---------------------------------------------------------------------------
@@ -528,6 +531,43 @@ def get_mob_damage(mob):
 # Full attack resolution
 # ---------------------------------------------------------------------------
 
+def get_damage_reduction(defender):
+    """
+    Calculate flat damage reduction from CON (toughness).
+
+    Formula: max(0, (CON - 10) // 2)
+
+    A CON of 10 gives 0 DR. Each 2 points above 10 gives +1 DR.
+
+    Args:
+        defender: The defending combatant.
+
+    Returns:
+        int: Damage reduction value (>= 0).
+    """
+    con = _stat(defender, "con")
+    return max(0, (con - 10) // 2)
+
+
+def check_critical_hit(attacker):
+    """
+    Check whether the attacker scores a critical hit.
+
+    Formula: LCK // 2 percent chance (e.g. LCK 20 = 10% crit).
+
+    Args:
+        attacker: The attacking combatant.
+
+    Returns:
+        bool: True if a critical hit occurred.
+    """
+    lck = _stat(attacker, "lck")
+    crit_chance = lck // 2
+    if crit_chance <= 0:
+        return False
+    return randint(1, 100) <= crit_chance
+
+
 def check_shield_block(defender):
     """
     Check whether the defender's shield blocks the attack.
@@ -559,7 +599,11 @@ def check_shield_block(defender):
 
 def resolve_attack(attacker, defender, accuracy_mod=0, offhand_attack=False):
     """
-    Resolve a single attack: roll to hit, check shield block, calculate damage.
+    Resolve a single attack: roll to hit, check crit, check shield block,
+    calculate damage, and apply damage reduction.
+
+    Critical hits bypass shield block and multiply damage by 1.5.
+    Damage reduction (CON-based) is subtracted after all multipliers.
 
     Args:
         attacker: The attacking combatant.
@@ -575,6 +619,8 @@ def resolve_attack(attacker, defender, accuracy_mod=0, offhand_attack=False):
             damage (int)        : Damage dealt (0 on miss or block).
             blocked (bool)      : Whether a shield blocked the hit.
             shield_name (str)   : Name of the shield that blocked, or None.
+            crit (bool)         : Whether this was a critical hit.
+            damage_reduced (int): Amount absorbed by damage reduction.
     """
     attack_roll = get_attack_roll(attacker, defender, accuracy_mod=accuracy_mod)
     defense = get_defense_value(defender)
@@ -583,18 +629,34 @@ def resolve_attack(attacker, defender, accuracy_mod=0, offhand_attack=False):
     damage = 0
     blocked = False
     shield_name = None
+    crit = False
+    damage_reduced = 0
 
     if hit:
-        # Check shield block before applying damage
-        block_result = check_shield_block(defender)
-        blocked = block_result["blocked"]
-        shield_name = block_result["shield_name"]
+        # Check for critical hit first
+        crit = check_critical_hit(attacker)
+
+        # Crits bypass shield block
+        if not crit:
+            block_result = check_shield_block(defender)
+            blocked = block_result["blocked"]
+            shield_name = block_result["shield_name"]
 
         if not blocked:
             if hasattr(attacker, "db") and getattr(attacker.db, "is_mob", False):
                 damage = get_mob_damage(attacker)
             else:
                 damage = get_damage(attacker, defender, offhand_attack=offhand_attack)
+
+            # Critical hit: x1.5 damage
+            if crit:
+                damage = damage * 3 // 2
+
+            # Damage reduction (CON-based toughness)
+            dr = get_damage_reduction(defender)
+            if dr > 0 and damage > 0:
+                damage_reduced = min(dr, damage - 1)  # can't reduce below 1
+                damage -= damage_reduced
 
     return {
         "hit": hit,
@@ -603,6 +665,8 @@ def resolve_attack(attacker, defender, accuracy_mod=0, offhand_attack=False):
         "damage": damage,
         "blocked": blocked,
         "shield_name": shield_name,
+        "crit": crit,
+        "damage_reduced": damage_reduced,
     }
 
 

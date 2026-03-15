@@ -411,12 +411,15 @@ class CombatHandler(DefaultScript):
         """
         Resolve one auto-attack between attacker and defender.
 
+        Handles main-hand attack, shield block messages, and offhand
+        (dual-wield) follow-up attacks.
+
         Args:
             attacker: The attacking combatant.
             defender: The defending combatant.
             deaths (list): Accumulator for combatants that die this tick.
         """
-        from contrib_dorfin.combat_rules import resolve_attack
+        from contrib_dorfin.combat_rules import resolve_attack, resolve_offhand_attack
 
         result = resolve_attack(attacker, defender)
         room = self.obj
@@ -425,65 +428,19 @@ class CombatHandler(DefaultScript):
         def_name = self._display_name(defender)
 
         if result["hit"]:
-            damage = result["damage"]
-
-            # Record HP before damage to detect kills
-            hp_before = self._get_hp(defender)
-
-            # Apply damage
-            if hasattr(defender, "take_damage"):
-                defender.take_damage(damage, source=attacker)
-            else:
-                # Fallback for objects without take_damage
-                if hasattr(defender, "db"):
-                    defender.db.hp = max(0, (defender.db.hp or 0) - damage)
-
-            # Build the hit message
-            if damage >= 15:
-                hit_verb = "|r*** CRUSHES ***|n"
-            elif damage >= 10:
-                hit_verb = "|rhits hard|n"
-            elif damage >= 5:
-                hit_verb = "|yhits|n"
-            else:
-                hit_verb = "scratches"
-
-            if room:
-                room.msg_contents(
-                    f"  {atk_name} {hit_verb} {def_name} "
-                    f"for |w{damage}|n damage!"
-                )
-
-            # Post-damage status feedback
-            is_defender_mob = (
-                getattr(defender.db, "is_mob", False)
-                if hasattr(defender, "db") else False
-            )
-            if is_defender_mob:
-                # Mob: qualitative condition to the room
-                condition = _mob_condition(defender)
-                if condition and room:
-                    room.msg_contents(f"  {def_name} {condition}.")
-            else:
-                # Player: private HP update
-                hp_now = self._get_hp(defender)
-                hp_max = defender.get_hp_max() if hasattr(defender, "get_hp_max") else 100
-                hp_color = "|g" if hp_now > hp_max * 0.5 else ("|y" if hp_now > hp_max * 0.25 else "|r")
-                if hasattr(defender, "msg"):
-                    defender.msg(
-                        f"  {hp_color}[HP: {hp_now}/{hp_max}]|n"
+            if result.get("blocked"):
+                # Shield block
+                shield = result.get("shield_name", "a shield")
+                if room:
+                    room.msg_contents(
+                        f"  {atk_name} strikes at {def_name} "
+                        f"but |c{shield}|n deflects the blow!"
                     )
-
-            # Check for kill (compare against pre-damage HP)
-            if hp_before > 0 and hp_before <= damage:
-                if defender not in deaths:
-                    deaths.append(defender)
-
-            # Also check via is_alive for mobs
-            elif not self._is_alive(defender):
-                if defender not in deaths:
-                    deaths.append(defender)
-
+            else:
+                damage = result["damage"]
+                self._apply_damage_and_message(
+                    attacker, defender, damage, deaths, atk_name, def_name
+                )
         else:
             # Miss
             if room:
@@ -491,6 +448,131 @@ class CombatHandler(DefaultScript):
                     f"  {atk_name} swings at {def_name} "
                     f"but |xmisses|n."
                 )
+
+        # --- Offhand (dual-wield) follow-up ---
+        if defender not in deaths and self._is_alive(defender):
+            off_result = resolve_offhand_attack(attacker, defender)
+            if off_result is not None:
+                self._resolve_offhand_tick(
+                    attacker, defender, off_result, deaths
+                )
+
+    def _resolve_offhand_tick(self, attacker, defender, result, deaths):
+        """
+        Resolve an offhand (dual-wield) attack.
+
+        Args:
+            attacker: The attacking combatant.
+            defender: The defending combatant.
+            result (dict): Result from resolve_offhand_attack().
+            deaths (list): Accumulator for combatants that die this tick.
+        """
+        room = self.obj
+        atk_name = self._display_name(attacker)
+        def_name = self._display_name(defender)
+
+        # Get offhand weapon name
+        from contrib_dorfin.combat_rules import _offhand
+        offhand = _offhand(attacker)
+        off_name = getattr(offhand, "key", "offhand weapon") if offhand else "offhand weapon"
+
+        if result["hit"]:
+            if result.get("blocked"):
+                shield = result.get("shield_name", "a shield")
+                if room:
+                    room.msg_contents(
+                        f"  {atk_name} slashes with {off_name} "
+                        f"but |c{shield}|n blocks it!"
+                    )
+            else:
+                damage = result["damage"]
+                self._apply_damage_and_message(
+                    attacker, defender, damage, deaths,
+                    atk_name, def_name, weapon_name=off_name
+                )
+        else:
+            if room:
+                room.msg_contents(
+                    f"  {atk_name} swings {off_name} at {def_name} "
+                    f"but |xmisses|n."
+                )
+
+    def _apply_damage_and_message(self, attacker, defender, damage, deaths,
+                                   atk_name, def_name, weapon_name=None):
+        """
+        Apply damage to a defender and send combat messages.
+
+        Shared by main-hand and offhand attack resolution.
+
+        Args:
+            attacker: The attacking combatant.
+            defender: The defending combatant.
+            damage (int): Damage to deal.
+            deaths (list): Accumulator for combatants that die this tick.
+            atk_name (str): Attacker display name.
+            def_name (str): Defender display name.
+            weapon_name (str or None): If set, include in hit message
+                                       (used for offhand attacks).
+        """
+        room = self.obj
+
+        # Record HP before damage to detect kills
+        hp_before = self._get_hp(defender)
+
+        # Apply damage
+        if hasattr(defender, "take_damage"):
+            defender.take_damage(damage, source=attacker)
+        else:
+            if hasattr(defender, "db"):
+                defender.db.hp = max(0, (defender.db.hp or 0) - damage)
+
+        # Build the hit message
+        if damage >= 15:
+            hit_verb = "|r*** CRUSHES ***|n"
+        elif damage >= 10:
+            hit_verb = "|rhits hard|n"
+        elif damage >= 5:
+            hit_verb = "|yhits|n"
+        else:
+            hit_verb = "scratches"
+
+        if room:
+            if weapon_name:
+                room.msg_contents(
+                    f"  {atk_name} {hit_verb} {def_name} "
+                    f"with {weapon_name} for |w{damage}|n damage!"
+                )
+            else:
+                room.msg_contents(
+                    f"  {atk_name} {hit_verb} {def_name} "
+                    f"for |w{damage}|n damage!"
+                )
+
+        # Post-damage status feedback
+        is_defender_mob = (
+            getattr(defender.db, "is_mob", False)
+            if hasattr(defender, "db") else False
+        )
+        if is_defender_mob:
+            condition = _mob_condition(defender)
+            if condition and room:
+                room.msg_contents(f"  {def_name} {condition}.")
+        else:
+            hp_now = self._get_hp(defender)
+            hp_max = defender.get_hp_max() if hasattr(defender, "get_hp_max") else 100
+            hp_color = "|g" if hp_now > hp_max * 0.5 else ("|y" if hp_now > hp_max * 0.25 else "|r")
+            if hasattr(defender, "msg"):
+                defender.msg(
+                    f"  {hp_color}[HP: {hp_now}/{hp_max}]|n"
+                )
+
+        # Check for kill
+        if hp_before > 0 and hp_before <= damage:
+            if defender not in deaths:
+                deaths.append(defender)
+        elif not self._is_alive(defender):
+            if defender not in deaths:
+                deaths.append(defender)
 
     # ------------------------------------------------------------------
     # Death handling

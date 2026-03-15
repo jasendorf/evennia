@@ -83,11 +83,52 @@ class CmdWield(Command):
             caller.msg(f"{item.key} is not a weapon.")
             return
 
-        # Use item's preferred slot unless player specified offhand
+        # Read weapon properties
+        item_wtype = getattr(item.db, "weapon_type", "melee") or "melee"
+        item_hands = getattr(item.db, "hands", 1) or 1
+
+        # --- Shield → force offhand ---
+        if item_wtype == "shield":
+            slot = "offhand"
+
+        # --- Two-handed weapon → both slots ---
+        if item_hands == 2:
+            # Clear offhand if occupied
+            current_off = caller.get_equipped("offhand")
+            if current_off:
+                caller.unequip("offhand")
+                caller.msg(f"You lower {current_off.key}.")
+
+            # Clear main hand if occupied
+            current_main = caller.get_equipped("weapon")
+            if current_main:
+                caller.unequip("weapon")
+                caller.msg(f"You lower {current_main.key}.")
+
+            caller.equip("weapon", item)
+            caller.equip("offhand", item)
+            caller.msg(f"You grip |w{item.key}|n with both hands.")
+            caller.location.msg_contents(
+                f"|w{caller.name}|n wields {item.key} in both hands.",
+                exclude=caller,
+            )
+            return
+
+        # --- Block offhand equip when 2H is wielded ---
         if slot == "weapon":
             slot = item.db.slot or "weapon"
+        if slot == "offhand":
+            current_main = caller.get_equipped("weapon")
+            if current_main:
+                main_hands = getattr(current_main.db, "hands", 1) or 1
+                if main_hands == 2:
+                    caller.msg(
+                        f"You must unwield {current_main.key} first "
+                        f"(two-handed weapon)."
+                    )
+                    return
 
-        # Unequip anything already there
+        # --- Standard 1H equip ---
         current = caller.get_equipped(slot)
         if current:
             caller.unequip(slot)
@@ -114,42 +155,66 @@ class CmdWield(Command):
 
         wielded = []
 
-        # Find a main-hand weapon (prefer items with slot "weapon" or no slot)
-        main_candidates = [w for w in weapons if (w.db.slot or "weapon") == "weapon"]
-        off_candidates = [w for w in weapons if (w.db.slot or "weapon") == "offhand"]
+        # Categorize weapons
+        shields = [w for w in weapons if (getattr(w.db, "weapon_type", "melee") or "melee") == "shield"]
+        two_handers = [w for w in weapons if (getattr(w.db, "hands", 1) or 1) == 2]
+        one_handers = [w for w in weapons if w not in shields and w not in two_handers]
 
-        # Equip main hand
+        # Prefer 1H main + shield/offhand over 2H
+        main_candidates = [w for w in one_handers if (w.db.slot or "weapon") == "weapon"]
+        if not main_candidates:
+            main_candidates = one_handers
+
         if main_candidates:
+            # Equip 1H main hand
             main_item = main_candidates[0]
             current = caller.get_equipped("weapon")
             if current and current != main_item:
                 caller.unequip("weapon")
-            if not current or current != main_item:
+            # Clear offhand too if it was 2H
+            current_off = caller.get_equipped("offhand")
+            if current_off and current_off == current:
+                caller.unequip("offhand")
+            if not caller.get_equipped("weapon") or caller.get_equipped("weapon") != main_item:
                 caller.equip("weapon", main_item)
                 wielded.append(f"|w{main_item.key}|n (main hand)")
-        elif weapons and not off_candidates:
-            # Only weapons available, use first one for main hand
-            main_item = weapons[0]
+
+            # Equip offhand — prefer shields, then other 1H
+            already_wielded = caller.get_equipped("weapon")
+            off_choices = shields + [w for w in one_handers if w != already_wielded]
+            off_choices = [w for w in off_choices if w != already_wielded]
+
+            if off_choices:
+                off_item = off_choices[0]
+                current_off = caller.get_equipped("offhand")
+                if current_off and current_off != off_item:
+                    caller.unequip("offhand")
+                if not caller.get_equipped("offhand") or caller.get_equipped("offhand") != off_item:
+                    caller.equip("offhand", off_item)
+                    off_label = "off hand"
+                    wielded.append(f"|w{off_item.key}|n ({off_label})")
+
+        elif two_handers:
+            # No 1H available, use a 2H weapon
+            main_item = two_handers[0]
             current = caller.get_equipped("weapon")
+            current_off = caller.get_equipped("offhand")
             if current and current != main_item:
                 caller.unequip("weapon")
-            if not current or current != main_item:
-                caller.equip("weapon", main_item)
-                wielded.append(f"|w{main_item.key}|n (main hand)")
-
-        # Equip offhand
-        already_wielded = caller.get_equipped("weapon")
-        off_choices = [w for w in off_candidates if w != already_wielded]
-        if not off_choices:
-            # Try any weapon not already wielded
-            off_choices = [w for w in weapons if w != already_wielded and w not in main_candidates[:1]]
-
-        if off_choices:
-            off_item = off_choices[0]
-            current = caller.get_equipped("offhand")
-            if current and current != off_item:
+            if current_off and current_off != main_item:
                 caller.unequip("offhand")
-            if not current or current != off_item:
+            if not caller.get_equipped("weapon") or caller.get_equipped("weapon") != main_item:
+                caller.equip("weapon", main_item)
+                caller.equip("offhand", main_item)
+                wielded.append(f"|w{main_item.key}|n (both hands)")
+
+        elif shields:
+            # Only shields, equip one in offhand
+            off_item = shields[0]
+            current_off = caller.get_equipped("offhand")
+            if current_off and current_off != off_item:
+                caller.unequip("offhand")
+            if not caller.get_equipped("offhand") or caller.get_equipped("offhand") != off_item:
                 caller.equip("offhand", off_item)
                 wielded.append(f"|w{off_item.key}|n (off hand)")
 
@@ -196,6 +261,18 @@ class CmdUnwield(Command):
             caller.msg(f"You have nothing in your {label}.")
             return
 
+        # 2H weapon: clear both slots
+        item_hands = getattr(current.db, "hands", 1) or 1
+        if item_hands == 2:
+            caller.unequip("weapon")
+            caller.unequip("offhand")
+            caller.msg(f"You sheathe {current.key}.")
+            caller.location.msg_contents(
+                f"|w{caller.name}|n sheathes {current.key}.",
+                exclude=caller
+            )
+            return
+
         caller.unequip(slot)
         caller.msg(f"You sheathe {current.key}.")
         caller.location.msg_contents(
@@ -232,10 +309,22 @@ class CmdEq(Command):
             "hands":   "Hands    ",
         }
 
+        main_weapon = caller.get_equipped("weapon")
+        offhand_item = caller.get_equipped("offhand")
+        is_two_handed = (
+            main_weapon and offhand_item
+            and main_weapon == offhand_item
+        )
+
         for slot, label in slot_labels.items():
             item = caller.get_equipped(slot)
             if item:
-                lines.append(f"  |c{label}|n : |w{item.key}|n")
+                if slot == "weapon" and is_two_handed:
+                    lines.append(f"  |c{label}|n : |w{item.key}|n (two-handed)")
+                elif slot == "offhand" and is_two_handed:
+                    continue  # suppress offhand line for 2H
+                else:
+                    lines.append(f"  |c{label}|n : |w{item.key}|n")
             else:
                 lines.append(f"  |c{label}|n : |x-empty-|n")
 

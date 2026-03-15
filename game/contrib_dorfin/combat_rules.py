@@ -15,6 +15,10 @@ Every function that takes a combatant expects an object with:
 Weapons are expected to have:
     db.damage_dice      -> str   (e.g. "1d6", "2d4+3")
     db.damage_bonus     -> int
+    db.weapon_type      -> str   ("melee", "ranged", "shield")
+    db.hands            -> int   (1 or 2)
+    db.block_chance     -> int   (shield block percentage, 0-100)
+    db.armor_bonus      -> int   (shield passive armor bonus)
 
 This module has zero imports from DorfinMUD typeclasses — it works with
 any object that satisfies the interface above.
@@ -23,9 +27,14 @@ Formulas
 --------
 
     Initiative:     AGI + PER + rand(1,20) + LCK // 5
-    Melee attack:   rand(1,100) + STR + DEX
-    Defense:        50 + AGI + PER + armor_bonus
-    Melee damage:   roll(weapon.damage_dice) + weapon.damage_bonus + STR // 3 + buff_damage_bonus
+    Melee attack:   rand(1,100) + STR + DEX + accuracy_mod
+    Ranged attack:  rand(1,100) + DEX + DEX + accuracy_mod
+    Defense:        50 + AGI + PER + armor_bonus + shield_armor
+    Shield block:   rand(1,100) <= block_chance  (checked after hit, before damage)
+    1H damage:      roll(dice) + weapon.bonus + STR // 3 + buff_dmg
+    2H damage:      roll(dice) + weapon.bonus + STR // 2 + buff_dmg
+    Ranged damage:  roll(dice) + weapon.bonus + DEX // 3 + buff_dmg
+    Offhand damage: roll(dice) + weapon.bonus + STR // 6 + buff_dmg
     Unarmed damage: 1d4 + STR // 4
     Flee chance:    (AGI + LCK) vs (opponent_PER + 10)  -> percentage
     Rescue:         STR + CHA + rand(1,20) vs mob_WIS + mob_level * 2 + 10
@@ -245,6 +254,44 @@ def _weapon(combatant):
     return None
 
 
+def _offhand(combatant):
+    """
+    Return the item in the combatant's offhand slot, or None.
+    """
+    if hasattr(combatant, "get_equipped"):
+        try:
+            return combatant.get_equipped("offhand")
+        except Exception:
+            return None
+    return None
+
+
+def _weapon_type(weapon):
+    """
+    Return the weapon type string: "melee", "ranged", or "shield".
+
+    Defaults to "melee" if the weapon has no weapon_type attribute.
+    """
+    if weapon and hasattr(weapon, "db"):
+        return getattr(weapon.db, "weapon_type", "melee") or "melee"
+    return "melee"
+
+
+def _weapon_hands(weapon):
+    """
+    Return how many hands the weapon requires (1 or 2).
+
+    Defaults to 1 if the weapon has no hands attribute.
+    """
+    if weapon and hasattr(weapon, "db"):
+        return getattr(weapon.db, "hands", 1) or 1
+    return 1
+
+
+# Offhand attacks suffer an accuracy penalty.
+OFFHAND_ACCURACY_PENALTY = -20
+
+
 def _armor_bonus(combatant, default=0):
     """
     Read the combatant's effective armor bonus.
@@ -319,30 +366,43 @@ def roll_initiative(combatant):
 # Attack and defense
 # ---------------------------------------------------------------------------
 
-def get_attack_roll(attacker, defender):
+def get_attack_roll(attacker, defender, accuracy_mod=0):
     """
-    Calculate an attack roll value for a melee attack.
+    Calculate an attack roll value.
 
-    Formula: rand(1,100) + STR + DEX
+    Melee:  rand(1,100) + STR + DEX + accuracy_mod
+    Ranged: rand(1,100) + DEX + DEX + accuracy_mod
+
+    The weapon_type of the main weapon determines which formula is used.
 
     Args:
         attacker: The attacking combatant.
         defender: The defending combatant (unused in base formula,
                   passed for future expansion — e.g. flanking bonuses).
+        accuracy_mod (int): Flat modifier to the roll (e.g. -20 for offhand).
 
     Returns:
         int: Attack roll value, compared against defense value.
     """
-    str_val = _stat(attacker, "str")
+    weapon = _weapon(attacker)
+    wtype = _weapon_type(weapon)
     dex_val = _stat(attacker, "dex")
-    return randint(1, 100) + str_val + dex_val
+
+    if wtype == "ranged":
+        return randint(1, 100) + dex_val + dex_val + accuracy_mod
+    else:
+        str_val = _stat(attacker, "str")
+        return randint(1, 100) + str_val + dex_val + accuracy_mod
 
 
 def get_defense_value(defender):
     """
     Calculate the defense value an attack must meet or exceed to hit.
 
-    Formula: 50 + AGI + PER + armor_bonus
+    Formula: 50 + AGI + PER + armor_bonus + shield_armor
+
+    If the defender has a shield in their offhand, its armor_bonus is
+    added to the defense total (passive benefit, separate from block).
 
     Args:
         defender: The defending combatant.
@@ -353,40 +413,65 @@ def get_defense_value(defender):
     agi = _stat(defender, "agi")
     per = _stat(defender, "per")
     armor = _armor_bonus(defender)
-    return 50 + agi + per + armor
+
+    # Shield passive armor bonus
+    shield_armor = 0
+    offhand = _offhand(defender)
+    if offhand and _weapon_type(offhand) == "shield":
+        shield_armor = getattr(offhand.db, "armor_bonus", 0) if hasattr(offhand, "db") else 0
+
+    return 50 + agi + per + armor + shield_armor
 
 
 # ---------------------------------------------------------------------------
 # Damage
 # ---------------------------------------------------------------------------
 
-def get_damage(attacker, defender):
+def get_damage(attacker, defender, offhand_attack=False):
     """
-    Calculate damage dealt by a successful melee attack.
+    Calculate damage dealt by a successful attack.
 
     With weapon:
-        roll(weapon.damage_dice) + weapon.damage_bonus + STR // 3 + buff_damage_bonus
+        1H melee:  roll(dice) + weapon.bonus + STR // 3 + buff_dmg
+        2H melee:  roll(dice) + weapon.bonus + STR // 2 + buff_dmg
+        Ranged:    roll(dice) + weapon.bonus + DEX // 3 + buff_dmg
+        Offhand:   roll(offhand.dice) + offhand.bonus + STR // 6 + buff_dmg
 
     Without weapon (unarmed):
         1d4 + STR // 4
 
     Args:
         attacker: The attacking combatant.
-        defender: The defending combatant (unused in base formula,
-                  passed for future expansion — e.g. damage resistance).
+        defender: The defending combatant (unused in base formula).
+        offhand_attack (bool): If True, use offhand weapon and reduced stat bonus.
 
     Returns:
         int: Damage value (minimum 1).
     """
-    weapon = _weapon(attacker)
     str_val = _stat(attacker, "str")
+    dex_val = _stat(attacker, "dex")
     buff_dmg = _damage_bonus(attacker)
+
+    if offhand_attack:
+        weapon = _offhand(attacker)
+    else:
+        weapon = _weapon(attacker)
 
     if weapon:
         dice_str = getattr(weapon.db, "damage_dice", "1d4") if hasattr(weapon, "db") else "1d4"
         weapon_bonus = getattr(weapon.db, "damage_bonus", 0) if hasattr(weapon, "db") else 0
         base = roll_dice(dice_str)
-        total = base + weapon_bonus + str_val // 3 + buff_dmg
+
+        if offhand_attack:
+            stat_bonus = str_val // 6
+        elif _weapon_type(weapon) == "ranged":
+            stat_bonus = dex_val // 3
+        elif _weapon_hands(weapon) == 2:
+            stat_bonus = str_val // 2
+        else:
+            stat_bonus = str_val // 3
+
+        total = base + weapon_bonus + stat_bonus + buff_dmg
     else:
         # Unarmed
         base = roll_dice("1d4")
@@ -400,7 +485,7 @@ def get_mob_damage(mob):
     Calculate damage dealt by a mob's natural attack.
 
     Uses mob.db.damage_dice if set, otherwise falls back to 1d4.
-    Adds STR // 3 as a bonus.
+    Stat bonus depends on weapon type: 2H STR//2, ranged DEX//3, else STR//3.
 
     Args:
         mob: The attacking mob.
@@ -415,13 +500,23 @@ def get_mob_damage(mob):
     # Mobs can also wield weapons
     weapon = _weapon(mob)
     str_val = _stat(mob, "str")
+    dex_val = _stat(mob, "dex")
     buff_dmg = _damage_bonus(mob)
 
     if weapon:
         w_dice = getattr(weapon.db, "damage_dice", dice_str) if hasattr(weapon, "db") else dice_str
         w_bonus = getattr(weapon.db, "damage_bonus", 0) if hasattr(weapon, "db") else 0
         base = roll_dice(w_dice)
-        total = base + w_bonus + str_val // 3 + buff_dmg
+
+        wtype = _weapon_type(weapon)
+        if wtype == "ranged":
+            stat_bonus = dex_val // 3
+        elif _weapon_hands(weapon) == 2:
+            stat_bonus = str_val // 2
+        else:
+            stat_bonus = str_val // 3
+
+        total = base + w_bonus + stat_bonus + buff_dmg
     else:
         base = roll_dice(dice_str)
         total = base + str_val // 3 + buff_dmg
@@ -433,39 +528,117 @@ def get_mob_damage(mob):
 # Full attack resolution
 # ---------------------------------------------------------------------------
 
-def resolve_attack(attacker, defender):
+def check_shield_block(defender):
     """
-    Resolve a single attack: roll to hit, calculate damage if successful.
+    Check whether the defender's shield blocks the attack.
+
+    If the defender has a shield in their offhand, roll against its
+    block_chance. No shield or non-shield offhand always returns
+    blocked=False.
 
     Args:
-        attacker: The attacking combatant.
         defender: The defending combatant.
 
     Returns:
         dict: Result with keys:
-            hit (bool)       : Whether the attack landed.
-            attack_roll (int): The attack roll value.
-            defense (int)    : The defense threshold.
-            damage (int)     : Damage dealt (0 on miss).
+            blocked (bool)      : Whether the shield blocked.
+            shield_name (str)   : Name of the shield, or None.
     """
-    attack_roll = get_attack_roll(attacker, defender)
+    offhand = _offhand(defender)
+    if not offhand or _weapon_type(offhand) != "shield":
+        return {"blocked": False, "shield_name": None}
+
+    block_chance = getattr(offhand.db, "block_chance", 0) if hasattr(offhand, "db") else 0
+    shield_name = getattr(offhand, "key", "shield")
+
+    if block_chance > 0 and randint(1, 100) <= block_chance:
+        return {"blocked": True, "shield_name": shield_name}
+
+    return {"blocked": False, "shield_name": shield_name}
+
+
+def resolve_attack(attacker, defender, accuracy_mod=0, offhand_attack=False):
+    """
+    Resolve a single attack: roll to hit, check shield block, calculate damage.
+
+    Args:
+        attacker: The attacking combatant.
+        defender: The defending combatant.
+        accuracy_mod (int): Flat modifier to attack roll (e.g. -20 for offhand).
+        offhand_attack (bool): If True, use offhand weapon for damage.
+
+    Returns:
+        dict: Result with keys:
+            hit (bool)          : Whether the attack landed.
+            attack_roll (int)   : The attack roll value.
+            defense (int)       : The defense threshold.
+            damage (int)        : Damage dealt (0 on miss or block).
+            blocked (bool)      : Whether a shield blocked the hit.
+            shield_name (str)   : Name of the shield that blocked, or None.
+    """
+    attack_roll = get_attack_roll(attacker, defender, accuracy_mod=accuracy_mod)
     defense = get_defense_value(defender)
     hit = attack_roll >= defense
 
     damage = 0
+    blocked = False
+    shield_name = None
+
     if hit:
-        # Use mob damage path if the attacker is a mob without get_equipped
-        if hasattr(attacker, "db") and getattr(attacker.db, "is_mob", False):
-            damage = get_mob_damage(attacker)
-        else:
-            damage = get_damage(attacker, defender)
+        # Check shield block before applying damage
+        block_result = check_shield_block(defender)
+        blocked = block_result["blocked"]
+        shield_name = block_result["shield_name"]
+
+        if not blocked:
+            if hasattr(attacker, "db") and getattr(attacker.db, "is_mob", False):
+                damage = get_mob_damage(attacker)
+            else:
+                damage = get_damage(attacker, defender, offhand_attack=offhand_attack)
 
     return {
         "hit": hit,
         "attack_roll": attack_roll,
         "defense": defense,
         "damage": damage,
+        "blocked": blocked,
+        "shield_name": shield_name,
     }
+
+
+def resolve_offhand_attack(attacker, defender):
+    """
+    Resolve an offhand attack if the attacker is dual-wielding.
+
+    Returns None if the attacker has no offhand weapon or the offhand
+    is a shield (shields don't attack).
+
+    Args:
+        attacker: The attacking combatant.
+        defender: The defending combatant.
+
+    Returns:
+        dict or None: Same format as resolve_attack(), or None if no
+                      offhand attack is possible.
+    """
+    offhand = _offhand(attacker)
+    if not offhand:
+        return None
+
+    # Shields don't make offhand attacks
+    if _weapon_type(offhand) == "shield":
+        return None
+
+    # Same weapon in both slots means 2H — no offhand attack
+    main = _weapon(attacker)
+    if main and offhand and main == offhand:
+        return None
+
+    return resolve_attack(
+        attacker, defender,
+        accuracy_mod=OFFHAND_ACCURACY_PENALTY,
+        offhand_attack=True,
+    )
 
 
 # ---------------------------------------------------------------------------

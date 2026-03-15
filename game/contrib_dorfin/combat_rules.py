@@ -41,14 +41,37 @@ from random import randint
 # ---------------------------------------------------------------------------
 
 _DICE_RE = re.compile(
-    r"^\s*(\d+)\s*[dD]\s*(\d+)\s*"     # NdS
-    r"(?:([+-])\s*(\d+))?\s*$"          # optional +/- modifier
+    r"^\s*(\d+)\s*[dD]\s*(\d+)"           # NdS  (required)
+    r"(!!?p?(?:>[0-9]+)?)?"               # exploding: ! !! !p !!p !>5 etc.
+    r"(?:([kd])([hl]?)(\d+))?"            # keep/drop: k3 kh2 kl1 d1 dl1
+    r"(?:r(o?)([<>])(\d+))?"              # reroll: r<2 ro<3 r>5
+    r"(?:\s*([+-])\s*(\d+))?\s*$"         # modifier: +3 -1
 )
+
+# Safety cap to prevent infinite loops on exploding dice.
+_MAX_EXPLOSIONS = 100
 
 
 def roll_dice(dice_str):
     """
-    Parse and roll a dice string like "2d6", "1d8+3", "3d4-1".
+    Parse and roll an extended dice notation string.
+
+    Supports standard RPG dice notation plus modifiers:
+
+        NdS         Basic roll: N dice with S sides, summed.
+        NdS+M       Flat modifier added to total.
+        NdS!        Exploding: max roll adds another die.
+        NdS!!       Compounding: explosions sum into one die value.
+        NdS!p       Penetrating: explosions subtract 1 per extra roll.
+        NdS!>T      Exploding on T or higher (instead of max only).
+        NdSkH       Keep highest H dice (e.g. 4d6k3).
+        NdSkl1      Keep lowest 1 die (e.g. 2d20kl1).
+        NdSdL       Drop lowest L dice (e.g. 4d6d1).
+        NdSdh1      Drop highest 1 die.
+        NdSr<T      Reroll any die below T (keep new value).
+        NdSro<T     Reroll once below T (keep new even if still low).
+
+    Modifiers can be combined: 4d6!k3+2
 
     Args:
         dice_str (str): Dice notation string.
@@ -60,9 +83,11 @@ def roll_dice(dice_str):
         ValueError: If the dice string cannot be parsed.
 
     Examples:
-        >>> roll_dice("1d6")       # 1-6
-        >>> roll_dice("2d4+3")     # 5-11
-        >>> roll_dice("1d20-2")    # -1 to 18, clamped to 1
+        >>> roll_dice("1d6")        # 1-6
+        >>> roll_dice("2d4+3")      # 5-11
+        >>> roll_dice("1d8!")       # exploding d8
+        >>> roll_dice("4d6k3")     # roll 4d6, keep best 3
+        >>> roll_dice("1d6!>5+2")  # explode on 5+, then +2
     """
     match = _DICE_RE.match(str(dice_str))
     if not match:
@@ -70,8 +95,15 @@ def roll_dice(dice_str):
 
     num = int(match.group(1))
     sides = int(match.group(2))
-    sign = match.group(3)
-    modifier = int(match.group(4)) if match.group(4) else 0
+    explode_str = match.group(3) or ""
+    kd_mode = match.group(4) or ""        # "k" or "d" or ""
+    kd_end = match.group(5) or ""         # "h" or "l" or ""
+    kd_count = int(match.group(6)) if match.group(6) else 0
+    reroll_once = match.group(7) or ""    # "o" or ""
+    reroll_cmp = match.group(8) or ""     # "<" or ">" or ""
+    reroll_val = int(match.group(9)) if match.group(9) else 0
+    sign = match.group(10)
+    modifier = int(match.group(11)) if match.group(11) else 0
 
     if sign == "-":
         modifier = -modifier
@@ -79,7 +111,97 @@ def roll_dice(dice_str):
     if num <= 0 or sides <= 0:
         raise ValueError(f"Invalid dice string: '{dice_str}'")
 
-    total = sum(randint(1, sides) for _ in range(num)) + modifier
+    # --- Determine exploding mode ---
+    exploding = "!" in explode_str
+    compounding = "!!" in explode_str
+    penetrating = "p" in explode_str
+    explode_threshold = sides  # default: explode on max
+    thresh_match = re.search(r">(\d+)", explode_str)
+    if thresh_match:
+        explode_threshold = int(thresh_match.group(1))
+
+    # --- Roll the dice ---
+    rolls = []
+    for _ in range(num):
+        die_total = 0
+        roll = randint(1, sides)
+
+        if not exploding:
+            # Simple roll, no explosions.
+            rolls.append(roll)
+            continue
+
+        if compounding:
+            # Compounding: all explosions sum into one value.
+            die_total = roll
+            explosions = 0
+            while roll >= explode_threshold and explosions < _MAX_EXPLOSIONS:
+                roll = randint(1, sides)
+                if penetrating:
+                    roll = max(1, roll - 1)
+                die_total += roll
+                explosions += 1
+            rolls.append(die_total)
+        else:
+            # Standard exploding: each explosion is a separate "die".
+            if penetrating:
+                rolls.append(roll)
+                explosions = 0
+                while roll >= explode_threshold and explosions < _MAX_EXPLOSIONS:
+                    roll = max(1, randint(1, sides) - 1)
+                    rolls.append(roll)
+                    explosions += 1
+            else:
+                rolls.append(roll)
+                explosions = 0
+                while roll >= explode_threshold and explosions < _MAX_EXPLOSIONS:
+                    roll = randint(1, sides)
+                    rolls.append(roll)
+                    explosions += 1
+
+    # --- Reroll ---
+    if reroll_cmp:
+        for i, r in enumerate(rolls):
+            should_reroll = (
+                (reroll_cmp == "<" and r < reroll_val)
+                or (reroll_cmp == ">" and r > reroll_val)
+            )
+            if should_reroll:
+                new_roll = randint(1, sides)
+                if reroll_once:
+                    # Reroll once: keep new value regardless.
+                    rolls[i] = new_roll
+                else:
+                    # Reroll until it no longer triggers.
+                    attempts = 0
+                    while (
+                        ((reroll_cmp == "<" and new_roll < reroll_val)
+                         or (reroll_cmp == ">" and new_roll > reroll_val))
+                        and attempts < _MAX_EXPLOSIONS
+                    ):
+                        new_roll = randint(1, sides)
+                        attempts += 1
+                    rolls[i] = new_roll
+
+    # --- Keep / Drop ---
+    if kd_mode and kd_count > 0:
+        sorted_rolls = sorted(rolls)
+        if kd_mode == "k":
+            # Keep
+            if kd_end == "l":
+                rolls = sorted_rolls[:kd_count]
+            else:
+                # Default "k" or "kh" = keep highest
+                rolls = sorted_rolls[-kd_count:]
+        elif kd_mode == "d":
+            # Drop
+            if kd_end == "h":
+                rolls = sorted_rolls[:-kd_count] if kd_count < len(sorted_rolls) else []
+            else:
+                # Default "d" or "dl" = drop lowest
+                rolls = sorted_rolls[kd_count:]
+
+    total = sum(rolls) + modifier
     return max(1, total)
 
 

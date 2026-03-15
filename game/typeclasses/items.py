@@ -214,11 +214,16 @@ class AwtownWeapon(AwtownItem):
     A wieldable weapon for the weapon or offhand equipment slot.
 
     Attributes:
-        db.slot          (str) -- "weapon" or "offhand"
-        db.damage_dice   (str) -- e.g. "1d6", "2d4"
-        db.damage_bonus  (int) -- flat bonus to damage rolls
-        db.desc          (str) -- description
-        db.value         (int) -- copper value
+        db.slot             (str) -- "weapon" or "offhand"
+        db.damage_dice      (str) -- e.g. "1d6", "2d4"
+        db.damage_bonus     (int) -- flat bonus to damage rolls
+        db.weapon_category  (str) -- "sword", "dagger", "axe", etc.
+        db.weapon_type      (str) -- "melee", "ranged", or "shield"
+        db.hands            (int) -- 1 or 2
+        db.block_chance     (int) -- shield only: % chance to block
+        db.armor_bonus      (int) -- shield only: flat armor bonus
+        db.desc             (str) -- description
+        db.value            (int) -- copper value
     """
 
     def at_object_creation(self):
@@ -229,19 +234,46 @@ class AwtownWeapon(AwtownItem):
             self.db.damage_dice = "1d4"
         if self.db.damage_bonus is None:
             self.db.damage_bonus = 0
+        if self.db.weapon_category is None:
+            self.db.weapon_category = "sword"
+        if self.db.weapon_type is None:
+            self.db.weapon_type = "melee"
+        if self.db.hands is None:
+            self.db.hands = 1
+        if self.db.block_chance is None:
+            self.db.block_chance = 0
+        if self.db.armor_bonus is None:
+            self.db.armor_bonus = 0
 
     def return_appearance(self, looker, **kwargs):
         desc = self.db.desc or "A weapon of some kind."
         value = self.db.value or 0
         dice = self.db.damage_dice or "1d4"
         bonus = self.db.damage_bonus or 0
-        bonus_str = f" +{bonus}" if bonus > 0 else (f" {bonus}" if bonus < 0 else "")
-        lines = [
-            f"|w{self.key}|n",
-            desc,
-            f"|cDamage: {dice}{bonus_str}|n",
-            f"|yValue: {format_money(value)}|n",
-        ]
+        category = getattr(self.db, "weapon_category", None) or "sword"
+        wtype = getattr(self.db, "weapon_type", None) or "melee"
+        hands = getattr(self.db, "hands", None) or 1
+        hands_str = "1H" if hands == 1 else "2H"
+
+        lines = [f"|w{self.key}|n", desc]
+
+        if wtype == "shield":
+            block = getattr(self.db, "block_chance", None) or 0
+            armor = getattr(self.db, "armor_bonus", None) or 0
+            lines.append(
+                f"|cBlock: {block}%  Armor: +{armor}|n"
+                f"  |xshield ({hands_str})|n"
+            )
+        else:
+            bonus_str = (f"+{bonus}" if bonus > 0
+                         else (str(bonus) if bonus < 0 else ""))
+            dmg = f"{dice}{bonus_str}"
+            lines.append(
+                f"|cDamage: {dmg}|n"
+                f"  |x{wtype} {category} ({hands_str})|n"
+            )
+
+        lines.append(f"|yValue: {format_money(value)}|n")
         return "\n".join(lines)
 
 

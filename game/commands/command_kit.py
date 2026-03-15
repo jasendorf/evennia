@@ -126,6 +126,9 @@ STARTER_WEAPONS = {
         "slot": "weapon",
         "damage_dice": "1d4",
         "damage_bonus": 0,
+        "weapon_category": "sword",
+        "weapon_type": "melee",
+        "hands": 1,
     },
     "club": {
         "name": "Crude Wooden Club",
@@ -138,6 +141,9 @@ STARTER_WEAPONS = {
         "slot": "weapon",
         "damage_dice": "1d6",
         "damage_bonus": 0,
+        "weapon_category": "club",
+        "weapon_type": "melee",
+        "hands": 1,
     },
     "staff": {
         "name": "Light Wooden Staff",
@@ -150,6 +156,9 @@ STARTER_WEAPONS = {
         "slot": "weapon",
         "damage_dice": "1d4",
         "damage_bonus": 1,
+        "weapon_category": "staff",
+        "weapon_type": "melee",
+        "hands": 2,
     },
     "dagger": {
         "name": "Dull Iron Dagger",
@@ -162,6 +171,9 @@ STARTER_WEAPONS = {
         "slot": "weapon",
         "damage_dice": "1d3",
         "damage_bonus": 1,
+        "weapon_category": "dagger",
+        "weapon_type": "melee",
+        "hands": 1,
     },
 }
 
@@ -249,6 +261,11 @@ def _create_weapon(data, location):
     obj.db.slot = data.get("slot", "weapon")
     obj.db.damage_dice = data.get("damage_dice", "1d4")
     obj.db.damage_bonus = data.get("damage_bonus", 0)
+    obj.db.weapon_category = data.get("weapon_category", "sword")
+    obj.db.weapon_type = data.get("weapon_type", "melee")
+    obj.db.hands = data.get("hands", 1)
+    obj.db.block_chance = data.get("block_chance", 0)
+    obj.db.armor_bonus = data.get("armor_bonus", 0)
     if data.get("aliases"):
         for alias in data["aliases"]:
             obj.aliases.add(alias)

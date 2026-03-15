@@ -259,6 +259,8 @@ class AwtownCharacter(DorfinPartyMixin, DorfinNeedsMixin, ClothedCharacter):
             self.db.autoassist = False
         if self.db.party_id is None:
             self.db.party_id = None
+        if self.db.weapon_skills is None:
+            self.db.weapon_skills = {}
 
     def _init_flags(self):
         """Initialise one-time flags."""
@@ -649,6 +651,75 @@ class AwtownCharacter(DorfinPartyMixin, DorfinNeedsMixin, ClothedCharacter):
         from evennia import search_object
         results = search_object(dbref)
         return results[0] if results else None
+
+    # ------------------------------------------------------------------
+    # Weapon Skills
+    # ------------------------------------------------------------------
+
+    def get_weapon_skill(self, category):
+        """
+        Return the current weapon skill level for a category.
+
+        Args:
+            category (str): Weapon category (e.g. "sword").
+
+        Returns:
+            int: Skill level (0-30).
+        """
+        skills = self.db.weapon_skills
+        if skills is None:
+            skills = {}
+            self.db.weapon_skills = skills
+        entry = skills.get(category)
+        if entry is None:
+            return 0
+        return entry.get("level", 0)
+
+    def add_weapon_skill_xp(self, category, amount):
+        """
+        Add weapon skill XP for a category. Checks for level-ups.
+
+        Args:
+            category (str): Weapon category (e.g. "sword").
+            amount (int): XP to add.
+
+        Returns:
+            int: Number of skill levels gained (0 if none).
+        """
+        from contrib_dorfin.combat_config import (
+            WEAPON_SKILL_XP_THRESHOLDS, MAX_WEAPON_SKILL_LEVEL,
+        )
+
+        skills = self.db.weapon_skills
+        if skills is None:
+            skills = {}
+            self.db.weapon_skills = skills
+
+        entry = skills.get(category)
+        if entry is None:
+            entry = {"xp": 0, "level": 0}
+            skills[category] = entry
+
+        entry["xp"] = entry.get("xp", 0) + amount
+        current_level = entry.get("level", 0)
+        levels_gained = 0
+
+        while current_level < MAX_WEAPON_SKILL_LEVEL:
+            next_level = current_level + 1
+            if next_level >= len(WEAPON_SKILL_XP_THRESHOLDS):
+                break
+            if entry["xp"] >= WEAPON_SKILL_XP_THRESHOLDS[next_level]:
+                current_level = next_level
+                levels_gained += 1
+            else:
+                break
+
+        if levels_gained:
+            entry["level"] = current_level
+
+        # Reassign to force Evennia persistence on nested dict
+        self.db.weapon_skills = skills
+        return levels_gained
 
 
 # ---------------------------------------------------------------------------

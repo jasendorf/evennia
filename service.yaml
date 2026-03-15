@@ -3,6 +3,8 @@ kind: Service
 metadata:
   name: evennia
   namespace: evennia
+  labels:
+    app: evennia
 spec:
   ports:
     - port: 80

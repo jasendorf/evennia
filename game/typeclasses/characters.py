@@ -427,9 +427,9 @@ class AwtownCharacter(DorfinPartyMixin, DorfinNeedsMixin, ClothedCharacter):
         hp_gain = HP_PER_LEVEL_BASE + con // 2
 
         if _TRAITS_AVAILABLE and self.traits and self.traits.get("hp"):
-            self.traits.hp.max += hp_gain
+            # GaugeTrait: .max is read-only (= base + mod), so only set .base
             self.traits.hp.base += hp_gain
-            # Full heal
+            # Full heal to new max
             self.traits.hp.current = self.traits.hp.max
 
         new_hp_max = self.get_hp_max()

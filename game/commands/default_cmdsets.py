@@ -57,6 +57,7 @@ from commands.command_admin_combat import (
     CmdTrainingRoom, CmdTestArena, CmdSpawnMob, CmdStopCombat, CmdCombatDebug,
     CmdFixCombat,
 )
+from commands.command_testdungeon import CmdTestDungeon
 from commands.command_party import CmdParty, CmdAutoAssist
 from commands.command_group_combat import CmdAssist, CmdRescue
 
@@ -162,6 +163,7 @@ class CharacterCmdSet(default_cmds.CharacterCmdSet):
 
         # --- Testing ---
         self.add(CmdTest())
+        self.add(CmdTestDungeon())     # @testdungeon / @td
 
 
 class AccountCmdSet(default_cmds.AccountCmdSet):

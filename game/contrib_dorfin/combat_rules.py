@@ -27,16 +27,16 @@ Formulas
 --------
 
     Initiative:     AGI + PER + rand(1,20) + LCK // 5
-    Melee attack:   rand(1,100) + STR + DEX + weapon_skill + accuracy_mod
-    Ranged attack:  rand(1,100) + DEX + DEX + weapon_skill + accuracy_mod
+    Melee attack:   rand(1,100) + STR + DEX + weapon_skill + race_mod + prof_penalty + accuracy_mod
+    Ranged attack:  rand(1,100) + DEX + DEX + weapon_skill + race_mod + prof_penalty + accuracy_mod
     Defense:        50 + AGI + PER + END // 2 + armor_bonus + shield_armor
     Shield block:   rand(1,100) <= block_chance  (checked after hit, before damage)
     Critical hit:   LCK // 2 % chance — bypasses shield block, x1.5 damage
-    1H damage:      roll(dice) + weapon.bonus + STR // 3 + skill // 2 + buff_dmg
-    2H damage:      roll(dice) + weapon.bonus + STR // 2 + skill // 2 + buff_dmg
-    Ranged damage:  roll(dice) + weapon.bonus + DEX // 3 + skill // 2 + buff_dmg
-    Offhand damage: roll(dice) + weapon.bonus + STR // 6 + skill // 2 + buff_dmg
-    Unarmed damage: 1d4 + STR // 4 + skill // 2  (monk: scaled dice + STR // 3)
+    1H damage:      roll(dice) + weapon.bonus + STR // 3 + skill // 2 + prof_penalty + buff_dmg
+    2H damage:      roll(dice) + weapon.bonus + STR // 2 + skill // 2 + prof_penalty + buff_dmg
+    Ranged damage:  roll(dice) + weapon.bonus + DEX // 3 + skill // 2 + prof_penalty + buff_dmg
+    Offhand damage: roll(dice) + weapon.bonus + STR // 6 + skill // 2 + prof_penalty + buff_dmg
+    Unarmed damage: 1d4 + STR // 4 + skill // 2 + prof_penalty  (monk: scaled dice + STR // 3)
     Damage reduction: max(0, (CON - 10) // 2)  — flat subtraction, min 1 final
     Weapon skill XP: 1 + max(0, def_level - atk_level), 0 if 5+ below, human +10%
     Flee chance:    (AGI + LCK) vs (opponent_PER + 10)  -> percentage
@@ -347,6 +347,65 @@ def _get_unarmed_dice(combatant):
     return "1d4"
 
 
+def _class_proficiency_penalty(combatant, category):
+    """
+    Return (attack_penalty, damage_penalty) based on class proficiency.
+
+    Three tiers:
+        Proficient:  (0, 0)   — category in CLASS_PROFICIENCIES
+        Unfamiliar:  (-15, -3) — not proficient, not opposed
+        Opposed:     (-25, -5) — category in CLASS_OPPOSED
+
+    Combatants with no char_class (mobs, classless PCs) get no penalty.
+    """
+    char_class = None
+    if hasattr(combatant, "db"):
+        char_class = getattr(combatant.db, "char_class", None)
+    if not char_class:
+        return (0, 0)
+
+    from contrib_dorfin.combat_config import CLASS_PROFICIENCIES, CLASS_OPPOSED
+
+    char_class = char_class.lower()
+
+    # Check opposed first (more restrictive)
+    opposed = CLASS_OPPOSED.get(char_class, [])
+    if category in opposed:
+        return (-25, -5)
+
+    # Check proficient
+    proficient = CLASS_PROFICIENCIES.get(char_class, [])
+    if category in proficient:
+        return (0, 0)
+
+    # Unfamiliar — not in either list
+    return (-15, -3)
+
+
+def _race_weapon_mod(combatant, category):
+    """
+    Return the race-based attack roll modifier for a weapon category.
+
+    Reads from RACE_COMBAT_MODS. Entries like {"bow": 5, "club": -3}
+    give flat bonuses/penalties to attack rolls with that category.
+
+    The special key "weapon_skill_xp_bonus" is ignored here (handled
+    in weapon XP awarding).
+
+    Combatants with no race get 0.
+    """
+    race = None
+    if hasattr(combatant, "db"):
+        race = getattr(combatant.db, "race", None)
+    if not race:
+        return 0
+
+    from contrib_dorfin.combat_config import RACE_COMBAT_MODS
+
+    mods = RACE_COMBAT_MODS.get(race.lower(), {})
+    return mods.get(category, 0)
+
+
 def _armor_bonus(combatant, default=0):
     """
     Read the combatant's effective armor bonus.
@@ -425,11 +484,13 @@ def get_attack_roll(attacker, defender, accuracy_mod=0):
     """
     Calculate an attack roll value.
 
-    Melee:  rand(1,100) + STR + DEX + weapon_skill + accuracy_mod
-    Ranged: rand(1,100) + DEX + DEX + weapon_skill + accuracy_mod
+    Melee:  rand(1,100) + STR + DEX + weapon_skill + race_mod + prof_penalty + accuracy_mod
+    Ranged: rand(1,100) + DEX + DEX + weapon_skill + race_mod + prof_penalty + accuracy_mod
 
     The weapon_type of the main weapon determines which formula is used.
     Weapon skill adds +1 per skill level (0-30).
+    Race mods are flat bonuses/penalties from RACE_COMBAT_MODS.
+    Class proficiency: proficient=0, unfamiliar=-15, opposed=-25.
 
     Args:
         attacker: The attacking combatant.
@@ -448,11 +509,15 @@ def get_attack_roll(attacker, defender, accuracy_mod=0):
     category = _weapon_category(weapon) if weapon else "unarmed"
     skill_bonus = _weapon_skill_level(attacker, category)
 
+    # Class proficiency and race modifiers
+    prof_atk, _prof_dmg = _class_proficiency_penalty(attacker, category)
+    race_mod = _race_weapon_mod(attacker, category)
+
     if wtype == "ranged":
-        return randint(1, 100) + dex_val + dex_val + skill_bonus + accuracy_mod
+        return randint(1, 100) + dex_val + dex_val + skill_bonus + race_mod + prof_atk + accuracy_mod
     else:
         str_val = _stat(attacker, "str")
-        return randint(1, 100) + str_val + dex_val + skill_bonus + accuracy_mod
+        return randint(1, 100) + str_val + dex_val + skill_bonus + race_mod + prof_atk + accuracy_mod
 
 
 def get_defense_value(defender):
@@ -536,7 +601,10 @@ def get_damage(attacker, defender, offhand_attack=False):
         category = _weapon_category(weapon)
         skill_dmg = _weapon_skill_level(attacker, category) // 2
 
-        total = base + weapon_bonus + stat_bonus + skill_dmg + buff_dmg
+        # Class proficiency damage penalty
+        _prof_atk, prof_dmg = _class_proficiency_penalty(attacker, category)
+
+        total = base + weapon_bonus + stat_bonus + skill_dmg + prof_dmg + buff_dmg
     else:
         # Unarmed — monks scale via MONK_UNARMED_DICE
         unarmed_dice = _get_unarmed_dice(attacker)
@@ -548,7 +616,11 @@ def get_damage(attacker, defender, offhand_attack=False):
             stat_bonus = str_val // 3
         else:
             stat_bonus = str_val // 4
-        total = base + stat_bonus + skill_dmg
+
+        # Class proficiency damage penalty (unarmed)
+        _prof_atk, prof_dmg = _class_proficiency_penalty(attacker, "unarmed")
+
+        total = base + stat_bonus + skill_dmg + prof_dmg
 
     return max(1, total)
 

@@ -112,6 +112,7 @@ class CmdWield(Command):
                 f"|w{caller.name}|n wields {item.key} in both hands.",
                 exclude=caller,
             )
+            self._proficiency_warning(caller, item)
             return
 
         # --- Block offhand equip when 2H is wielded ---
@@ -141,6 +142,34 @@ class CmdWield(Command):
             f"|w{caller.name}|n wields {item.key}.",
             exclude=caller
         )
+        self._proficiency_warning(caller, item)
+
+    def _proficiency_warning(self, caller, item):
+        """Show a warning if the caller's class is unfamiliar or opposed."""
+        char_class = getattr(caller.db, "char_class", None) if hasattr(caller, "db") else None
+        if not char_class:
+            return
+        category = getattr(item.db, "weapon_category", None) if hasattr(item, "db") else None
+        if not category:
+            return
+
+        from contrib_dorfin.combat_config import CLASS_PROFICIENCIES, CLASS_OPPOSED
+
+        char_class_lower = char_class.lower()
+        opposed = CLASS_OPPOSED.get(char_class_lower, [])
+        if category in opposed:
+            caller.msg(
+                f"|r  Warning: {char_class}s are opposed to {category} weapons "
+                f"(-25 attack, -5 damage).|n"
+            )
+            return
+
+        proficient = CLASS_PROFICIENCIES.get(char_class_lower, [])
+        if category not in proficient:
+            caller.msg(
+                f"|y  Warning: {char_class}s are unfamiliar with {category} weapons "
+                f"(-15 attack, -3 damage).|n"
+            )
 
     def _wield_all(self, caller, AwtownWeapon):
         """Auto-equip a main-hand weapon and an offhand weapon/shield."""

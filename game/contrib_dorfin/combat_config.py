@@ -13,6 +13,7 @@ Contains:
     - Class proficiencies and opposed weapons
     - Race combat modifiers
     - Monk unarmed scaling
+    - Weapon skill milestones (perks at 3, 7, 12, 18, 25)
 """
 
 
@@ -169,4 +170,101 @@ RACE_COMBAT_MODS = {
     "firbolg":   {"staff": 5, "club": 3, "dagger": -3},
     "changeling": {"dagger": 3, "sword": 2},
     "tortle":    {"club": 3, "shield": 5, "bow": -5, "unarmed": 3},
+}
+
+
+# ---------------------------------------------------------------------------
+# Weapon Skill Milestones (perks at 3, 7, 12, 18, 25)
+# ---------------------------------------------------------------------------
+#
+# Each entry: (skill_level, effect_type, value, name)
+#
+# For upgrade chains (same effect_type at higher level), the resolver
+# picks the highest-level entry at or below the combatant's skill.
+#
+# Effect types:
+#   Passive (applied in combat_rules formulas):
+#     passive_initiative  - flat initiative bonus
+#     passive_accuracy    - flat attack roll bonus
+#     passive_defense     - flat defense bonus
+#     passive_damage      - flat damage bonus
+#     passive_block       - block% without shield (like parry)
+#     crit_chance_bonus   - flat crit% bonus
+#     crit_multiplier     - override crit damage multiplier (default 1.5)
+#     armor_ignore_pct    - % of target armor to bypass
+#     execute_threshold   - +50% damage vs targets below this HP%
+#     berserker           - (bonus_dmg, defense_penalty) tuple
+#
+#   Proc/Stateful (handled in combat_handler):
+#     stun_chance         - % chance to stun on hit (skip next attack)
+#     bonus_attack_chance - % chance of extra attack on hit
+#     riposte_chance      - % counter-attack when enemy misses you
+#     bleed               - (dmg_per_round, rounds) DoT on hit
+#     armor_shatter       - reduce target defense on hit
+#     defense_shatter     - (chance%, reduction) reduce all enemy defense
+#     backstab_multiplier - first attack in combat damage multiplier
+#     damage_reduction_chance - % chance to debuff target damage by 25%
+#     on_kill_cleave      - on kill, deal N% damage to another enemy
+#     on_kill_attack_all  - on kill, attack all remaining enemies
+#     first_round_attack_all - first round, attack all enemies
+#     first_attack_defense   - bonus defense until first hit received
+#     unarmed_dice_upgrade   - upgrade non-monk unarmed dice (1d4 -> 1d6)
+
+WEAPON_MILESTONES = {
+    "sword": [
+        (3,  "passive_defense",     3,    "Parry Stance"),
+        (7,  "riposte_chance",      5,    "Riposte"),
+        (12, "passive_block",       5,    "Parry"),
+        (18, "bonus_attack_chance", 10,   "Blade Dance"),
+        (25, "on_kill_attack_all",  True, "Whirlwind"),
+    ],
+    "dagger": [
+        (3,  "passive_initiative",   3,   "Quick Hands"),
+        (7,  "passive_initiative",   5,   "Quick Strike"),
+        (12, "backstab_multiplier",  1.5, "Backstab"),
+        (18, "crit_multiplier",      2.0, "Eviscerate"),
+        (25, "crit_multiplier",      2.5, "Death Strike"),
+    ],
+    "axe": [
+        (3,  "passive_damage",      2,      "Heavy Swing"),
+        (7,  "on_kill_cleave",      50,     "Cleave"),
+        (12, "bleed",              (3, 2),  "Rend"),
+        (18, "execute_threshold",   25,     "Execute"),
+        (25, "berserker",         (5, 5),   "Berserker"),
+    ],
+    "club": [
+        (3,  "stun_chance",    3,  "Daze"),
+        (7,  "stun_chance",    5,  "Stun"),
+        (12, "armor_shatter",  3,  "Shatter"),
+        (18, "stun_chance",    10, "Concuss"),
+    ],
+    "staff": [
+        (3, "passive_defense",   3,      "Reach"),
+        (7, "defense_shatter",  (5, 5),  "Sweep"),
+    ],
+    "polearm": [
+        (3, "first_attack_defense", 5,  "Set"),
+        (7, "first_attack_defense", 10, "Brace"),
+    ],
+    "bow": [
+        (3,  "passive_accuracy",        3,    "Focus"),
+        (7,  "passive_accuracy",        5,    "Steady Aim"),
+        (12, "bonus_attack_chance",     15,   "Rapid Shot"),
+        (18, "crit_chance_bonus",       10,   "Aimed Shot"),
+        (25, "first_round_attack_all",  True, "Arrow Storm"),
+    ],
+    "crossbow": [
+        (3,  "passive_damage",    2,   "Brace Shot"),
+        (7,  "armor_ignore_pct",  50,  "Pierce"),
+        (12, "crit_chance_bonus", 5,   "Headshot"),
+        (18, "armor_ignore_pct",  100, "Siege Shot"),
+    ],
+    "unarmed": [
+        (3,  "bonus_attack_chance",      10,   "Quick Jab"),
+        (7,  "bonus_attack_chance",      15,   "Flurry"),
+        (12, "unarmed_dice_upgrade",     True, "Iron Fist"),
+        (18, "damage_reduction_chance",  5,    "Pressure Points"),
+        (25, "bonus_attack_chance",      25,   "Thousand Fists"),
+    ],
+    "shield": [],
 }

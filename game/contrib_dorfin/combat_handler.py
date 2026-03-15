@@ -45,6 +45,8 @@ The combat commands (chunk 4) call these class methods:
     handler.set_aggro_lock(mob, rescuer, duration_ticks=2)
 """
 
+from random import randint
+
 from evennia import DefaultScript
 from evennia.utils.logger import log_err
 
@@ -359,6 +361,9 @@ class CombatHandler(DefaultScript):
             self.delete()
             return
 
+        # Initialize milestone state (lazy init for server reload resilience)
+        self._init_milestone_state()
+
         # Expire old aggro locks
         self._expire_aggro_locks()
 
@@ -373,6 +378,9 @@ class CombatHandler(DefaultScript):
 
         # Track deaths this tick (process after all attacks)
         deaths = []
+
+        # Apply bleeds at the start of the round
+        self._apply_bleeds(combatants, deaths, room)
 
         # Each combatant attacks their target
         for combatant in combatants:
@@ -389,12 +397,33 @@ class CombatHandler(DefaultScript):
             if self._check_wimpy(combatant):
                 continue
 
+            # Milestone: stun — skip attack if stunned
+            if combatant.dbref in self.ndb.stunned:
+                self.ndb.stunned.discard(combatant.dbref)
+                if room:
+                    name = self._display_name(combatant)
+                    room.msg_contents(f"  {name} is |ystunned|n and can't attack!")
+                continue
+
             # Get target
             target = self.get_target(combatant)
             if not target or not self._is_alive(target) or target in deaths:
                 # Try to find a new target
                 target = self._find_new_target(combatant)
                 if not target:
+                    continue
+
+            # Milestone: first_round_attack_all (bow Arrow Storm)
+            if self.ndb.first_round and combatant.dbref not in self.ndb.arrow_storm_used:
+                from contrib_dorfin.combat_rules import (
+                    get_active_milestones, _weapon, _weapon_category,
+                )
+                weapon = _weapon(combatant)
+                cat = _weapon_category(weapon) if weapon else "unarmed"
+                ms = get_active_milestones(combatant, cat)
+                if ms.get("first_round_attack_all"):
+                    self.ndb.arrow_storm_used.add(combatant.dbref)
+                    self._arrow_storm(combatant, combatants, deaths)
                     continue
 
             # Resolve attack
@@ -404,6 +433,9 @@ class CombatHandler(DefaultScript):
         for dead in deaths:
             self._handle_death(dead)
 
+        # First round is over after first tick
+        self.ndb.first_round = False
+
         # Check if combat should end
         self._check_combat_end()
 
@@ -411,25 +443,61 @@ class CombatHandler(DefaultScript):
         """
         Resolve one auto-attack between attacker and defender.
 
-        Handles main-hand attack, shield block messages, and offhand
-        (dual-wield) follow-up attacks.
+        Handles main-hand attack, shield block messages, offhand
+        (dual-wield) follow-up attacks, and milestone procs.
 
         Args:
             attacker: The attacking combatant.
             defender: The defending combatant.
             deaths (list): Accumulator for combatants that die this tick.
         """
-        from contrib_dorfin.combat_rules import resolve_attack, resolve_offhand_attack
+        from contrib_dorfin.combat_rules import (
+            resolve_attack, resolve_offhand_attack,
+            get_active_milestones, _weapon, _weapon_category,
+        )
 
-        result = resolve_attack(attacker, defender)
         room = self.obj
+
+        # Compute defense_mod from handler state (polearm Set/Brace, shatter debuffs)
+        defense_mod = 0
+        def_dbref = defender.dbref
+
+        # Polearm first_attack_defense: bonus until first hit received
+        if def_dbref in self.ndb.polearm_defense:
+            defense_mod += self.ndb.polearm_defense[def_dbref]
+
+        # Armor/defense shatter debuffs (negative = easier to hit)
+        defense_mod -= self.ndb.armor_debuffs.get(def_dbref, 0)
+        defense_mod -= self.ndb.defense_debuffs.get(def_dbref, 0)
+
+        # Compute damage_multiplier from handler state (backstab)
+        damage_multiplier = 1.0
+        atk_dbref = attacker.dbref
+        if atk_dbref in self.ndb.first_attacks:
+            weapon = _weapon(attacker)
+            cat = _weapon_category(weapon) if weapon else "unarmed"
+            ms = get_active_milestones(attacker, cat)
+            backstab = ms.get("backstab_multiplier")
+            if backstab:
+                damage_multiplier = backstab[0]
+            self.ndb.first_attacks.discard(atk_dbref)
+
+        # Damage debuff from pressure points
+        atk_dmg_debuff = self.ndb.damage_debuffs.get(atk_dbref, 1.0)
+        damage_multiplier *= atk_dmg_debuff
+
+        result = resolve_attack(
+            attacker, defender,
+            defense_mod=defense_mod,
+            damage_multiplier=damage_multiplier,
+        )
 
         atk_name = self._display_name(attacker)
         def_name = self._display_name(defender)
 
         if result["hit"]:
             if result.get("blocked"):
-                # Shield block
+                # Shield block or parry
                 shield = result.get("shield_name", "a shield")
                 if room:
                     room.msg_contents(
@@ -443,6 +511,22 @@ class CombatHandler(DefaultScript):
                     crit=result.get("crit", False),
                     damage_reduced=result.get("damage_reduced", 0),
                 )
+
+                # Consume polearm defense on first hit received
+                if def_dbref in self.ndb.polearm_defense:
+                    del self.ndb.polearm_defense[def_dbref]
+
+                # Post-hit milestone procs (stun, bleed, shatter, bonus attack, etc.)
+                if defender not in deaths and self._is_alive(defender):
+                    self._check_milestone_procs(
+                        attacker, defender, deaths, is_offhand=False
+                    )
+
+                # On-kill milestones (cleave, whirlwind)
+                if defender in deaths:
+                    self._handle_on_kill_milestones(
+                        attacker, defender, deaths
+                    )
         else:
             # Miss
             if room:
@@ -451,9 +535,15 @@ class CombatHandler(DefaultScript):
                     f"but |xmisses|n."
                 )
 
+            # Milestone: riposte (sword) — defender counter-attacks on miss
+            if defender not in deaths and self._is_alive(defender):
+                self._check_riposte(defender, attacker, deaths)
+
         # --- Offhand (dual-wield) follow-up ---
         if defender not in deaths and self._is_alive(defender):
-            off_result = resolve_offhand_attack(attacker, defender)
+            off_result = resolve_offhand_attack(
+                attacker, defender, defense_mod=defense_mod,
+            )
             if off_result is not None:
                 self._resolve_offhand_tick(
                     attacker, defender, off_result, deaths
@@ -597,6 +687,414 @@ class CombatHandler(DefaultScript):
         elif not self._is_alive(defender):
             if defender not in deaths:
                 deaths.append(defender)
+
+    # ------------------------------------------------------------------
+    # Milestone state management
+    # ------------------------------------------------------------------
+
+    def _init_milestone_state(self):
+        """
+        Lazily initialize ndb milestone state. Called at start of each tick.
+        Non-persistent (ndb) resets on server reload — acceptable for combat.
+        """
+        if not hasattr(self.ndb, "stunned") or self.ndb.stunned is None:
+            self.ndb.stunned = set()
+        if not hasattr(self.ndb, "bleeds") or self.ndb.bleeds is None:
+            self.ndb.bleeds = {}  # {dbref: [(dmg, rounds_left), ...]}
+        if not hasattr(self.ndb, "armor_debuffs") or self.ndb.armor_debuffs is None:
+            self.ndb.armor_debuffs = {}  # {dbref: total_reduction}
+        if not hasattr(self.ndb, "defense_debuffs") or self.ndb.defense_debuffs is None:
+            self.ndb.defense_debuffs = {}  # {dbref: total_reduction}
+        if not hasattr(self.ndb, "damage_debuffs") or self.ndb.damage_debuffs is None:
+            self.ndb.damage_debuffs = {}  # {dbref: multiplier}
+        if not hasattr(self.ndb, "first_attacks") or self.ndb.first_attacks is None:
+            # All combatants start with first_attack status
+            self.ndb.first_attacks = set(self.db.combatants or [])
+        if not hasattr(self.ndb, "first_round") or self.ndb.first_round is None:
+            self.ndb.first_round = (self.db.tick_count or 0) <= 1
+        if not hasattr(self.ndb, "arrow_storm_used") or self.ndb.arrow_storm_used is None:
+            self.ndb.arrow_storm_used = set()
+        if not hasattr(self.ndb, "polearm_defense") or self.ndb.polearm_defense is None:
+            # Initialize polearm defense for combatants with the milestone
+            self.ndb.polearm_defense = {}
+            from contrib_dorfin.combat_rules import (
+                get_active_milestones, _weapon, _weapon_category,
+            )
+            for dbref in (self.db.combatants or []):
+                obj = self._resolve(dbref)
+                if obj:
+                    weapon = _weapon(obj)
+                    cat = _weapon_category(weapon) if weapon else "unarmed"
+                    ms = get_active_milestones(obj, cat)
+                    pdef = ms.get("first_attack_defense")
+                    if pdef:
+                        self.ndb.polearm_defense[dbref] = pdef[0]
+
+    # ------------------------------------------------------------------
+    # Milestone procs (post-hit)
+    # ------------------------------------------------------------------
+
+    def _check_milestone_procs(self, attacker, defender, deaths,
+                                is_offhand=False):
+        """
+        Check and apply post-hit milestone procs.
+
+        Called after a successful hit (not blocked). Handles:
+        stun, bleed, armor shatter, defense shatter, pressure points,
+        bonus attack.
+        """
+        from contrib_dorfin.combat_rules import (
+            get_active_milestones, _weapon, _offhand as _get_offhand,
+            _weapon_category, resolve_attack,
+        )
+
+        if is_offhand:
+            weapon = _get_offhand(attacker)
+        else:
+            weapon = _weapon(attacker)
+        category = _weapon_category(weapon) if weapon else "unarmed"
+        milestones = get_active_milestones(attacker, category)
+
+        room = self.obj
+        atk_name = self._display_name(attacker)
+        def_name = self._display_name(defender)
+        def_dbref = defender.dbref
+
+        # Stun chance (club Daze/Stun/Concuss)
+        stun = milestones.get("stun_chance")
+        if stun and randint(1, 100) <= stun[0]:
+            self.ndb.stunned.add(def_dbref)
+            if room:
+                room.msg_contents(
+                    f"  {def_name} is |y*** STUNNED ***|n!"
+                )
+
+        # Bleed (axe Rend)
+        bleed = milestones.get("bleed")
+        if bleed:
+            dmg_per_round, rounds = bleed[0]
+            if def_dbref not in self.ndb.bleeds:
+                self.ndb.bleeds[def_dbref] = []
+            self.ndb.bleeds[def_dbref].append([dmg_per_round, rounds])
+            if room:
+                room.msg_contents(
+                    f"  {def_name} |rbleeds|n from the wound!"
+                )
+
+        # Armor shatter (club Shatter)
+        shatter = milestones.get("armor_shatter")
+        if shatter:
+            self.ndb.armor_debuffs[def_dbref] = (
+                self.ndb.armor_debuffs.get(def_dbref, 0) + shatter[0]
+            )
+            if room:
+                room.msg_contents(
+                    f"  {def_name}'s armor |ycracks|n! (-{shatter[0]} defense)"
+                )
+
+        # Defense shatter (staff Sweep — chance to reduce all enemy defense)
+        sweep = milestones.get("defense_shatter")
+        if sweep:
+            chance, reduction = sweep[0]
+            if randint(1, 100) <= chance:
+                # Apply to all enemies of the attacker
+                is_atk_mob = (
+                    getattr(attacker.db, "is_mob", False)
+                    if hasattr(attacker, "db") else False
+                )
+                for c in self.get_combatants():
+                    c_is_mob = (
+                        getattr(c.db, "is_mob", False)
+                        if hasattr(c, "db") else False
+                    )
+                    if c != attacker and c_is_mob != is_atk_mob:
+                        self.ndb.defense_debuffs[c.dbref] = (
+                            self.ndb.defense_debuffs.get(c.dbref, 0) + reduction
+                        )
+                if room:
+                    room.msg_contents(
+                        f"  {atk_name} |ysweeps|n the staff! "
+                        f"All enemies lose |w{reduction}|n defense!"
+                    )
+
+        # Pressure Points (unarmed — chance to debuff target damage by 25%)
+        pressure = milestones.get("damage_reduction_chance")
+        if pressure and randint(1, 100) <= pressure[0]:
+            self.ndb.damage_debuffs[def_dbref] = 0.75
+            if room:
+                room.msg_contents(
+                    f"  {atk_name} strikes a pressure point! "
+                    f"{def_name}'s attacks are |yweakened|n!"
+                )
+
+        # Bonus attack chance (unarmed Quick Jab/Flurry/Thousand Fists,
+        # sword Blade Dance, bow Rapid Shot)
+        bonus_atk = milestones.get("bonus_attack_chance")
+        if bonus_atk and randint(1, 100) <= bonus_atk[0]:
+            if defender not in deaths and self._is_alive(defender):
+                self._fire_bonus_attack(attacker, defender, deaths)
+
+    def _check_riposte(self, defender, attacker, deaths):
+        """
+        Check if defender counter-attacks after attacker misses (sword Riposte).
+        """
+        from contrib_dorfin.combat_rules import (
+            get_active_milestones, resolve_attack, _weapon, _weapon_category,
+        )
+
+        weapon = _weapon(defender)
+        category = _weapon_category(weapon) if weapon else "unarmed"
+        milestones = get_active_milestones(defender, category)
+
+        riposte = milestones.get("riposte_chance")
+        if not riposte or randint(1, 100) > riposte[0]:
+            return
+
+        room = self.obj
+        def_name = self._display_name(defender)
+        atk_name = self._display_name(attacker)
+
+        result = resolve_attack(defender, attacker)
+        if result["hit"] and not result.get("blocked") and result["damage"] > 0:
+            damage = result["damage"]
+            if room:
+                room.msg_contents(
+                    f"  {def_name} |c*** RIPOSTES ***|n and hits "
+                    f"{atk_name} for |w{damage}|n damage!"
+                )
+            if hasattr(attacker, "take_damage"):
+                attacker.take_damage(damage, source=defender)
+            elif hasattr(attacker, "db"):
+                attacker.db.hp = max(0, (attacker.db.hp or 0) - damage)
+            if not self._is_alive(attacker) and attacker not in deaths:
+                deaths.append(attacker)
+        elif room:
+            room.msg_contents(
+                f"  {def_name} |c*** RIPOSTES ***|n but misses!"
+            )
+
+    def _fire_bonus_attack(self, attacker, defender, deaths):
+        """Fire a bonus attack from a milestone proc."""
+        from contrib_dorfin.combat_rules import resolve_attack
+
+        room = self.obj
+        atk_name = self._display_name(attacker)
+        def_name = self._display_name(defender)
+
+        result = resolve_attack(attacker, defender)
+        if result["hit"] and not result.get("blocked") and result["damage"] > 0:
+            damage = result["damage"]
+            if room:
+                room.msg_contents(
+                    f"  {atk_name} strikes again! "
+                    f"|yhits|n {def_name} for |w{damage}|n damage!"
+                )
+            if hasattr(defender, "take_damage"):
+                defender.take_damage(damage, source=attacker)
+            elif hasattr(defender, "db"):
+                defender.db.hp = max(0, (defender.db.hp or 0) - damage)
+            if not self._is_alive(defender) and defender not in deaths:
+                deaths.append(defender)
+        elif room:
+            if result.get("blocked"):
+                shield = result.get("shield_name", "a shield")
+                room.msg_contents(
+                    f"  {atk_name} strikes again but "
+                    f"|c{shield}|n blocks it!"
+                )
+            else:
+                room.msg_contents(
+                    f"  {atk_name} strikes again but |xmisses|n!"
+                )
+
+    # ------------------------------------------------------------------
+    # Milestone: bleeds
+    # ------------------------------------------------------------------
+
+    def _apply_bleeds(self, combatants, deaths, room):
+        """Apply bleed damage at the start of each round."""
+        if not self.ndb.bleeds:
+            return
+
+        alive_dbrefs = {c.dbref: c for c in combatants if self._is_alive(c)}
+        expired = []
+
+        for dbref, bleed_list in self.ndb.bleeds.items():
+            obj = alive_dbrefs.get(dbref)
+            if not obj:
+                expired.append(dbref)
+                continue
+
+            total_bleed = 0
+            still_active = []
+            for entry in bleed_list:
+                dmg, rounds_left = entry
+                total_bleed += dmg
+                rounds_left -= 1
+                if rounds_left > 0:
+                    still_active.append([dmg, rounds_left])
+
+            if still_active:
+                self.ndb.bleeds[dbref] = still_active
+            else:
+                expired.append(dbref)
+
+            if total_bleed > 0:
+                if hasattr(obj, "take_damage"):
+                    obj.take_damage(total_bleed)
+                elif hasattr(obj, "db"):
+                    obj.db.hp = max(0, (obj.db.hp or 0) - total_bleed)
+
+                if room:
+                    name = self._display_name(obj)
+                    room.msg_contents(
+                        f"  {name} |rtakes {total_bleed} bleed damage|n!"
+                    )
+
+                if not self._is_alive(obj) and obj not in deaths:
+                    deaths.append(obj)
+
+        for dbref in expired:
+            self.ndb.bleeds.pop(dbref, None)
+
+    # ------------------------------------------------------------------
+    # Milestone: on-kill effects
+    # ------------------------------------------------------------------
+
+    def _handle_on_kill_milestones(self, killer, dead_target, deaths):
+        """
+        Handle on-kill milestone procs (axe Cleave, sword Whirlwind).
+        """
+        from contrib_dorfin.combat_rules import (
+            get_active_milestones, resolve_attack, _weapon, _weapon_category,
+        )
+
+        weapon = _weapon(killer)
+        category = _weapon_category(weapon) if weapon else "unarmed"
+        milestones = get_active_milestones(killer, category)
+        room = self.obj
+        killer_name = self._display_name(killer)
+
+        # Determine remaining enemies
+        is_killer_mob = (
+            getattr(killer.db, "is_mob", False)
+            if hasattr(killer, "db") else False
+        )
+        enemies = [
+            c for c in self.get_combatants()
+            if c != killer
+            and c not in deaths
+            and self._is_alive(c)
+            and (getattr(c.db, "is_mob", False) if hasattr(c, "db") else False)
+               != is_killer_mob
+        ]
+
+        if not enemies:
+            return
+
+        # Cleave (axe): deal N% of last hit damage to another enemy
+        cleave = milestones.get("on_kill_cleave")
+        if cleave:
+            target = enemies[0]
+            # Resolve a fresh attack at 50% damage
+            result = resolve_attack(killer, target)
+            if result["hit"] and result["damage"] > 0:
+                damage = result["damage"] * cleave[0] // 100
+                damage = max(1, damage)
+                if hasattr(target, "take_damage"):
+                    target.take_damage(damage, source=killer)
+                elif hasattr(target, "db"):
+                    target.db.hp = max(0, (target.db.hp or 0) - damage)
+                if room:
+                    t_name = self._display_name(target)
+                    room.msg_contents(
+                        f"  {killer_name} |r*** CLEAVES ***|n into "
+                        f"{t_name} for |w{damage}|n damage!"
+                    )
+                if not self._is_alive(target) and target not in deaths:
+                    deaths.append(target)
+
+        # Whirlwind (sword): attack ALL remaining enemies
+        whirlwind = milestones.get("on_kill_attack_all")
+        if whirlwind:
+            if room:
+                room.msg_contents(
+                    f"  {killer_name} |r*** WHIRLWINDS ***|n!"
+                )
+            for target in enemies:
+                if target in deaths or not self._is_alive(target):
+                    continue
+                result = resolve_attack(killer, target)
+                t_name = self._display_name(target)
+                if result["hit"] and not result.get("blocked") and result["damage"] > 0:
+                    damage = result["damage"]
+                    if hasattr(target, "take_damage"):
+                        target.take_damage(damage, source=killer)
+                    elif hasattr(target, "db"):
+                        target.db.hp = max(0, (target.db.hp or 0) - damage)
+                    if room:
+                        room.msg_contents(
+                            f"    hits {t_name} for |w{damage}|n damage!"
+                        )
+                    if not self._is_alive(target) and target not in deaths:
+                        deaths.append(target)
+                elif room:
+                    room.msg_contents(f"    misses {t_name}!")
+
+    # ------------------------------------------------------------------
+    # Milestone: Arrow Storm (first round attack all)
+    # ------------------------------------------------------------------
+
+    def _arrow_storm(self, attacker, combatants, deaths):
+        """First-round bow milestone: attack all enemies."""
+        from contrib_dorfin.combat_rules import resolve_attack
+
+        room = self.obj
+        atk_name = self._display_name(attacker)
+        is_atk_mob = (
+            getattr(attacker.db, "is_mob", False)
+            if hasattr(attacker, "db") else False
+        )
+
+        enemies = [
+            c for c in combatants
+            if c != attacker
+            and c not in deaths
+            and self._is_alive(c)
+            and (getattr(c.db, "is_mob", False) if hasattr(c, "db") else False)
+               != is_atk_mob
+        ]
+
+        if not enemies:
+            return
+
+        if room:
+            room.msg_contents(
+                f"  {atk_name} unleashes an |r*** ARROW STORM ***|n!"
+            )
+
+        for target in enemies:
+            if target in deaths or not self._is_alive(target):
+                continue
+            result = resolve_attack(attacker, target)
+            t_name = self._display_name(target)
+            if result["hit"] and not result.get("blocked") and result["damage"] > 0:
+                damage = result["damage"]
+                if hasattr(target, "take_damage"):
+                    target.take_damage(damage, source=attacker)
+                elif hasattr(target, "db"):
+                    target.db.hp = max(0, (target.db.hp or 0) - damage)
+                if room:
+                    room.msg_contents(
+                        f"    hits {t_name} for |w{damage}|n damage!"
+                    )
+                if not self._is_alive(target) and target not in deaths:
+                    deaths.append(target)
+            elif room:
+                if result.get("blocked"):
+                    room.msg_contents(f"    {t_name} blocks!")
+                else:
+                    room.msg_contents(f"    misses {t_name}!")
 
     # ------------------------------------------------------------------
     # Weapon skill XP

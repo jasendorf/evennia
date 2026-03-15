@@ -26,12 +26,13 @@ any object that satisfies the interface above.
 Formulas
 --------
 
-    Initiative:     AGI + PER + rand(1,20) + LCK // 5
-    Melee attack:   rand(1,100) + STR + DEX + weapon_skill + race_mod + prof_penalty + accuracy_mod
-    Ranged attack:  rand(1,100) + DEX + DEX + weapon_skill + race_mod + prof_penalty + accuracy_mod
-    Defense:        50 + AGI + PER + END // 2 + armor_bonus + shield_armor
+    Initiative:     AGI + PER + rand(1,20) + LCK // 5 + milestone_init
+    Melee attack:   rand(1,100) + STR + DEX + weapon_skill + race_mod + prof_penalty + milestone_acc + accuracy_mod
+    Ranged attack:  rand(1,100) + DEX + DEX + weapon_skill + race_mod + prof_penalty + milestone_acc + accuracy_mod
+    Defense:        50 + AGI + PER + END // 2 + armor_bonus + shield_armor + milestone_def + defense_mod
     Shield block:   rand(1,100) <= block_chance  (checked after hit, before damage)
-    Critical hit:   LCK // 2 % chance — bypasses shield block, x1.5 damage
+    Parry block:    rand(1,100) <= milestone passive_block%  (sword 12+, no shield needed)
+    Critical hit:   (LCK // 2 + milestone_crit) % chance — bypasses shield block, x1.5 (or milestone override)
     1H damage:      roll(dice) + weapon.bonus + STR // 3 + skill // 2 + prof_penalty + buff_dmg
     2H damage:      roll(dice) + weapon.bonus + STR // 2 + skill // 2 + prof_penalty + buff_dmg
     Ranged damage:  roll(dice) + weapon.bonus + DEX // 3 + skill // 2 + prof_penalty + buff_dmg
@@ -344,7 +345,46 @@ def _get_unarmed_dice(combatant):
                 break
         return best_dice
 
+    # Non-monk Iron Fist milestone: upgrade 1d4 to 1d6 at unarmed skill 12+
+    skill = _weapon_skill_level(combatant, "unarmed")
+    if skill >= 12:
+        return "1d6"
+
     return "1d4"
+
+
+def get_active_milestones(combatant, category=None):
+    """
+    Return active weapon skill milestones for a combatant.
+
+    For each effect_type within the category, only the highest-level entry
+    at or below the combatant's skill level is returned.
+
+    Args:
+        combatant: The combatant to check.
+        category (str): Weapon category. If None, uses main weapon's category.
+
+    Returns:
+        dict: {effect_type: (value, name), ...}
+    """
+    if category is None:
+        weapon = _weapon(combatant)
+        category = _weapon_category(weapon) if weapon else "unarmed"
+
+    skill = _weapon_skill_level(combatant, category)
+    if skill < 3:
+        return {}
+
+    from contrib_dorfin.combat_config import WEAPON_MILESTONES
+    milestones = WEAPON_MILESTONES.get(category, [])
+
+    active = {}
+    for level, effect_type, value, name in milestones:
+        if skill >= level:
+            # Higher levels override lower for same effect_type
+            active[effect_type] = (value, name)
+
+    return active
 
 
 def _class_proficiency_penalty(combatant, category):
@@ -473,7 +513,15 @@ def roll_initiative(combatant):
     agi = _stat(combatant, "agi")
     per = _stat(combatant, "per")
     lck = _stat(combatant, "lck")
-    return agi + per + randint(1, 20) + lck // 5
+    base = agi + per + randint(1, 20) + lck // 5
+
+    # Milestone: passive_initiative (dagger Quick Hands / Quick Strike)
+    milestones = get_active_milestones(combatant)
+    init_bonus = milestones.get("passive_initiative")
+    if init_bonus:
+        base += init_bonus[0]
+
+    return base
 
 
 # ---------------------------------------------------------------------------
@@ -513,11 +561,16 @@ def get_attack_roll(attacker, defender, accuracy_mod=0):
     prof_atk, _prof_dmg = _class_proficiency_penalty(attacker, category)
     race_mod = _race_weapon_mod(attacker, category)
 
+    # Milestone: passive_accuracy (bow Focus / Steady Aim)
+    milestones = get_active_milestones(attacker, category)
+    acc_bonus = milestones.get("passive_accuracy")
+    milestone_acc = acc_bonus[0] if acc_bonus else 0
+
     if wtype == "ranged":
-        return randint(1, 100) + dex_val + dex_val + skill_bonus + race_mod + prof_atk + accuracy_mod
+        return randint(1, 100) + dex_val + dex_val + skill_bonus + race_mod + prof_atk + milestone_acc + accuracy_mod
     else:
         str_val = _stat(attacker, "str")
-        return randint(1, 100) + str_val + dex_val + skill_bonus + race_mod + prof_atk + accuracy_mod
+        return randint(1, 100) + str_val + dex_val + skill_bonus + race_mod + prof_atk + milestone_acc + accuracy_mod
 
 
 def get_defense_value(defender):
@@ -546,7 +599,19 @@ def get_defense_value(defender):
     if offhand and _weapon_type(offhand) == "shield":
         shield_armor = getattr(offhand.db, "armor_bonus", 0) if hasattr(offhand, "db") else 0
 
-    return 50 + agi + per + end // 2 + armor + shield_armor
+    base = 50 + agi + per + end // 2 + armor + shield_armor
+
+    # Milestones: passive_defense (sword Parry Stance, staff Reach),
+    # berserker defense penalty (axe Berserker -5)
+    milestones = get_active_milestones(defender)
+    def_bonus = milestones.get("passive_defense")
+    if def_bonus:
+        base += def_bonus[0]
+    berserker = milestones.get("berserker")
+    if berserker:
+        base -= berserker[0][1]  # (bonus_dmg, defense_penalty)
+
+    return base
 
 
 # ---------------------------------------------------------------------------
@@ -604,7 +669,18 @@ def get_damage(attacker, defender, offhand_attack=False):
         # Class proficiency damage penalty
         _prof_atk, prof_dmg = _class_proficiency_penalty(attacker, category)
 
-        total = base + weapon_bonus + stat_bonus + skill_dmg + prof_dmg + buff_dmg
+        # Milestones: passive_damage (axe Heavy Swing, crossbow Brace Shot),
+        # berserker damage bonus (axe Berserker +5)
+        milestones = get_active_milestones(attacker, category)
+        milestone_dmg = 0
+        dmg_bonus = milestones.get("passive_damage")
+        if dmg_bonus:
+            milestone_dmg += dmg_bonus[0]
+        berserker = milestones.get("berserker")
+        if berserker:
+            milestone_dmg += berserker[0][0]  # (bonus_dmg, defense_penalty)
+
+        total = base + weapon_bonus + stat_bonus + skill_dmg + prof_dmg + milestone_dmg + buff_dmg
     else:
         # Unarmed — monks scale via MONK_UNARMED_DICE
         unarmed_dice = _get_unarmed_dice(attacker)
@@ -691,20 +767,29 @@ def get_damage_reduction(defender):
     return max(0, (con - 10) // 2)
 
 
-def check_critical_hit(attacker):
+def check_critical_hit(attacker, category=None):
     """
     Check whether the attacker scores a critical hit.
 
-    Formula: LCK // 2 percent chance (e.g. LCK 20 = 10% crit).
+    Formula: (LCK // 2 + milestone_crit) percent chance.
 
     Args:
         attacker: The attacking combatant.
+        category (str): Weapon category for milestone lookup. If None,
+                        uses main weapon's category.
 
     Returns:
         bool: True if a critical hit occurred.
     """
     lck = _stat(attacker, "lck")
     crit_chance = lck // 2
+
+    # Milestone: crit_chance_bonus (crossbow Headshot, bow Aimed Shot)
+    milestones = get_active_milestones(attacker, category)
+    crit_bonus = milestones.get("crit_chance_bonus")
+    if crit_bonus:
+        crit_chance += crit_bonus[0]
+
     if crit_chance <= 0:
         return False
     return randint(1, 100) <= crit_chance
@@ -712,39 +797,49 @@ def check_critical_hit(attacker):
 
 def check_shield_block(defender):
     """
-    Check whether the defender's shield blocks the attack.
+    Check whether the defender blocks the attack with a shield or parry.
 
-    If the defender has a shield in their offhand, roll against its
-    block_chance. No shield or non-shield offhand always returns
-    blocked=False.
+    Shield: roll against offhand shield's block_chance.
+    Parry: sword milestone passive_block gives block% without a shield.
 
     Args:
         defender: The defending combatant.
 
     Returns:
         dict: Result with keys:
-            blocked (bool)      : Whether the shield blocked.
-            shield_name (str)   : Name of the shield, or None.
+            blocked (bool)      : Whether the block/parry succeeded.
+            shield_name (str)   : Name of the shield, or "parry" for milestone.
     """
+    # Check shield first
     offhand = _offhand(defender)
-    if not offhand or _weapon_type(offhand) != "shield":
-        return {"blocked": False, "shield_name": None}
+    if offhand and _weapon_type(offhand) == "shield":
+        block_chance = getattr(offhand.db, "block_chance", 0) if hasattr(offhand, "db") else 0
+        shield_name = getattr(offhand, "key", "shield")
 
-    block_chance = getattr(offhand.db, "block_chance", 0) if hasattr(offhand, "db") else 0
-    shield_name = getattr(offhand, "key", "shield")
+        if block_chance > 0 and randint(1, 100) <= block_chance:
+            return {"blocked": True, "shield_name": shield_name}
 
-    if block_chance > 0 and randint(1, 100) <= block_chance:
-        return {"blocked": True, "shield_name": shield_name}
+        return {"blocked": False, "shield_name": shield_name}
 
-    return {"blocked": False, "shield_name": shield_name}
+    # No shield — check for passive_block milestone (sword Parry)
+    milestones = get_active_milestones(defender)
+    parry = milestones.get("passive_block")
+    if parry:
+        parry_chance = parry[0]
+        if parry_chance > 0 and randint(1, 100) <= parry_chance:
+            return {"blocked": True, "shield_name": "a deft parry"}
+
+    return {"blocked": False, "shield_name": None}
 
 
-def resolve_attack(attacker, defender, accuracy_mod=0, offhand_attack=False):
+def resolve_attack(attacker, defender, accuracy_mod=0, offhand_attack=False,
+                    defense_mod=0, damage_multiplier=1.0):
     """
     Resolve a single attack: roll to hit, check crit, check shield block,
-    calculate damage, and apply damage reduction.
+    calculate damage, apply milestones, and apply damage reduction.
 
-    Critical hits bypass shield block and multiply damage by 1.5.
+    Critical hits bypass shield block. Crit multiplier defaults to 1.5
+    but can be overridden by milestones (dagger Eviscerate/Death Strike).
     Damage reduction (CON-based) is subtracted after all multipliers.
 
     Args:
@@ -752,6 +847,10 @@ def resolve_attack(attacker, defender, accuracy_mod=0, offhand_attack=False):
         defender: The defending combatant.
         accuracy_mod (int): Flat modifier to attack roll (e.g. -20 for offhand).
         offhand_attack (bool): If True, use offhand weapon for damage.
+        defense_mod (int): Flat modifier to defense (negative = easier to hit).
+                           Used by handler for polearm Set/Brace, shatter debuffs.
+        damage_multiplier (float): Multiplier for final damage (>1.0 = more).
+                                   Used by handler for backstab.
 
     Returns:
         dict: Result with keys:
@@ -764,8 +863,23 @@ def resolve_attack(attacker, defender, accuracy_mod=0, offhand_attack=False):
             crit (bool)         : Whether this was a critical hit.
             damage_reduced (int): Amount absorbed by damage reduction.
     """
+    # Determine attacking weapon's category for milestones
+    if offhand_attack:
+        atk_weapon = _offhand(attacker)
+    else:
+        atk_weapon = _weapon(attacker)
+    atk_category = _weapon_category(atk_weapon) if atk_weapon else "unarmed"
+    atk_milestones = get_active_milestones(attacker, atk_category)
+
     attack_roll = get_attack_roll(attacker, defender, accuracy_mod=accuracy_mod)
-    defense = get_defense_value(defender)
+    defense = get_defense_value(defender) + defense_mod
+
+    # Milestone: armor_ignore_pct (crossbow Pierce / Siege Shot)
+    armor_ignore = atk_milestones.get("armor_ignore_pct")
+    if armor_ignore:
+        ignored = _armor_bonus(defender) * armor_ignore[0] // 100
+        defense -= ignored
+
     hit = attack_roll >= defense
 
     damage = 0
@@ -775,8 +889,8 @@ def resolve_attack(attacker, defender, accuracy_mod=0, offhand_attack=False):
     damage_reduced = 0
 
     if hit:
-        # Check for critical hit first
-        crit = check_critical_hit(attacker)
+        # Check for critical hit first (pass category for milestone crit bonus)
+        crit = check_critical_hit(attacker, category=atk_category)
 
         # Crits bypass shield block
         if not crit:
@@ -790,9 +904,30 @@ def resolve_attack(attacker, defender, accuracy_mod=0, offhand_attack=False):
             else:
                 damage = get_damage(attacker, defender, offhand_attack=offhand_attack)
 
-            # Critical hit: x1.5 damage
+            # Milestone: execute_threshold (axe Execute — +50% vs low HP)
+            execute = atk_milestones.get("execute_threshold")
+            if execute and hasattr(defender, "get_hp") and hasattr(defender, "get_hp_max"):
+                try:
+                    hp_max = defender.get_hp_max()
+                    if hp_max > 0:
+                        hp_pct = defender.get_hp() * 100 // hp_max
+                        if hp_pct < execute[0]:
+                            damage = damage * 3 // 2
+                except Exception:
+                    pass
+
+            # External damage multiplier (backstab, etc.)
+            if damage_multiplier != 1.0:
+                damage = int(damage * damage_multiplier)
+
+            # Critical hit multiplier (default 1.5, milestone can override)
             if crit:
-                damage = damage * 3 // 2
+                crit_mult = atk_milestones.get("crit_multiplier")
+                if crit_mult:
+                    # crit_mult[0] is e.g. 2.0 or 2.5
+                    damage = int(damage * crit_mult[0])
+                else:
+                    damage = damage * 3 // 2
 
             # Damage reduction (CON-based toughness)
             dr = get_damage_reduction(defender)
@@ -812,7 +947,7 @@ def resolve_attack(attacker, defender, accuracy_mod=0, offhand_attack=False):
     }
 
 
-def resolve_offhand_attack(attacker, defender):
+def resolve_offhand_attack(attacker, defender, defense_mod=0):
     """
     Resolve an offhand attack if the attacker is dual-wielding.
 
@@ -822,6 +957,7 @@ def resolve_offhand_attack(attacker, defender):
     Args:
         attacker: The attacking combatant.
         defender: The defending combatant.
+        defense_mod (int): Flat modifier to defense (passed through).
 
     Returns:
         dict or None: Same format as resolve_attack(), or None if no
@@ -844,6 +980,7 @@ def resolve_offhand_attack(attacker, defender):
         attacker, defender,
         accuracy_mod=OFFHAND_ACCURACY_PENALTY,
         offhand_attack=True,
+        defense_mod=defense_mod,
     )
 
 

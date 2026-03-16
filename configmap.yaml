@@ -57,6 +57,10 @@ data:
     }
 
     WEBSERVER_INTERFACES = ["0.0.0.0"]
+
+    # Allow multiple sessions per account, each puppeting a different character
+    MULTISESSION_MODE = 2
+    MAX_NR_SIMULTANEOUS_PUPPETS = 4
     WEBSOCKET_CLIENT_INTERFACE = "0.0.0.0"
     TELNET_INTERFACES = ["0.0.0.0"]
     START_LOCATION = "#86"

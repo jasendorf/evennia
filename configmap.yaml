@@ -143,6 +143,14 @@ data:
         echo 'CHARGEN_MENU = "world.chargen"' >> "$GAME_DIR/server/conf/settings.py"
     fi
 
+    # Ensure multisession settings are present
+    if ! grep -q "MULTISESSION_MODE" "$GAME_DIR/server/conf/settings.py"; then
+        echo "" >> "$GAME_DIR/server/conf/settings.py"
+        echo "# Allow multiple sessions per account, each puppeting a different character" >> "$GAME_DIR/server/conf/settings.py"
+        echo "MULTISESSION_MODE = 2" >> "$GAME_DIR/server/conf/settings.py"
+        echo "MAX_NR_SIMULTANEOUS_PUPPETS = 4" >> "$GAME_DIR/server/conf/settings.py"
+    fi
+
     # Copy custom homepage template
     mkdir -p "$GAME_DIR/web/templates/website/homepage"
     cp /config/main-content.html "$GAME_DIR/web/templates/website/homepage/main-content.html"

@@ -10,7 +10,7 @@ Usage:
     @testdungeon/teardown   Destroy the test dungeon and return home.
 """
 
-from evennia.commands.command import Command
+from evennia.commands.default.muxcommand import MuxCommand
 from evennia import create_object, search_object
 from evennia.objects.models import ObjectDB
 
@@ -612,7 +612,7 @@ def teardown_test_dungeon(caller):
 # Command
 # -------------------------------------------------------------------------
 
-class CmdTestDungeon(Command):
+class CmdTestDungeon(MuxCommand):
     """
     Create or destroy an isolated test dungeon.
 

@@ -469,9 +469,9 @@ class CmdScore(Command):
         sc
 
     Shows your health, base stats, experience, level, class, race,
-    weapon skills, combat stats, currency, and active buffs.
+    currency, hunger/thirst, and active buffs.
 
-    See also: skills (detailed weapon skill view)
+    See also: combat (combat stats), skills (weapon skills)
     """
 
     key = "score"
@@ -486,7 +486,9 @@ class CmdScore(Command):
         # Header with class/race
         char_class = getattr(caller.db, "char_class", None) or ""
         race = getattr(caller.db, "race", None) or ""
-        identity = " ".join(p for p in [race.replace("_", " ").title(), char_class.title()] if p)
+        identity = " ".join(
+            p for p in [race.replace("_", " ").title(), char_class.title()] if p
+        )
         subtitle = f"Level {level} {identity}" if identity else f"Level {level}"
 
         lines = [
@@ -548,38 +550,6 @@ class CmdScore(Command):
 
             lines.append(f"{left_str:<25}{right_str}")
 
-        # --- Derived Combat Stats ---
-        lines.append(f"\n|w  {'--- Combat ---':^46}|n")
-        con = caller.get_stat("con") if hasattr(caller, "get_stat") else 10
-        lck = caller.get_stat("lck") if hasattr(caller, "get_stat") else 10
-        dr = max(0, (con - 10) // 2)
-        base_crit = lck // 2
-        lines.append(f"  Damage Reduction: |w{dr}|n    Crit Chance: |w{base_crit}%|n")
-
-        # --- Weapon Skills (compact) ---
-        weapon_skills = caller.db.weapon_skills or {}
-        trained = {cat: data for cat, data in weapon_skills.items()
-                   if data.get("level", 0) > 0 or data.get("xp", 0) > 0}
-        if trained:
-            from contrib_dorfin.combat_config import (
-                WEAPON_SKILL_XP_THRESHOLDS, MAX_WEAPON_SKILL_LEVEL,
-            )
-            lines.append(f"\n|w  {'--- Weapon Skills ---':^46}|n")
-            for cat in sorted(trained.keys()):
-                data = trained[cat]
-                sk_level = data.get("level", 0)
-                sk_xp = data.get("xp", 0)
-                if sk_level >= MAX_WEAPON_SKILL_LEVEL:
-                    progress = "|cMAX|n"
-                else:
-                    xp_cur = WEAPON_SKILL_XP_THRESHOLDS[sk_level]
-                    xp_nxt = WEAPON_SKILL_XP_THRESHOLDS[sk_level + 1]
-                    xp_into = sk_xp - xp_cur
-                    xp_need = xp_nxt - xp_cur
-                    pct = int(100 * xp_into / xp_need) if xp_need > 0 else 0
-                    progress = f"{pct}%"
-                lines.append(f"  {cat:<12} Lv |w{sk_level:>2}|n  ({progress})")
-
         if hasattr(caller, "needs"):
             lines.append(f"\n|w  {'--- Needs ---':^46}|n")
             needs_display = caller.needs.display()
@@ -592,6 +562,166 @@ class CmdScore(Command):
 
         if getattr(caller.db, "in_combat", False):
             lines.append(f"\n  |r** IN COMBAT **|n")
+
+        lines.append(f"|w{'=' * 50}|n")
+        caller.msg("\n".join(lines))
+
+
+# ---------------------------------------------------------------------------
+# combat — combat stats, equipment, proficiency, milestones
+# ---------------------------------------------------------------------------
+
+class CmdCombatStats(Command):
+    """
+    Show your combat stats, equipped weapons, proficiency, and milestones.
+
+    Usage:
+        combat
+
+    Displays damage reduction, crit chance, equipped weapons with
+    proficiency status, race modifiers, and active milestone perks.
+
+    See also: score (character stats), skills (weapon skill detail)
+    """
+
+    key = "combat"
+    help_category = "Combat"
+    locks = "cmd:all()"
+
+    def func(self):
+        caller = self.caller
+
+        lines = [
+            f"|w{'=' * 50}|n",
+            f"|w  Combat Summary|n",
+            f"|w{'=' * 50}|n",
+        ]
+
+        # --- Derived stats ---
+        con = caller.get_stat("con") if hasattr(caller, "get_stat") else 10
+        lck = caller.get_stat("lck") if hasattr(caller, "get_stat") else 10
+        end = caller.get_stat("end") if hasattr(caller, "get_stat") else 10
+        dr = max(0, (con - 10) // 2)
+        base_crit = lck // 2
+        end_def = end // 2
+        lines.append(f"  Damage Reduction: |w{dr}|n  (CON)")
+        lines.append(f"  Crit Chance:      |w{base_crit}%|n  (LCK)")
+        lines.append(f"  Defense from END: |w+{end_def}|n")
+
+        # --- Equipped weapons ---
+        lines.append(f"\n|w  {'--- Equipped ---':^46}|n")
+
+        main_weapon = caller.get_equipped("weapon") if hasattr(caller, "get_equipped") else None
+        offhand = caller.get_equipped("offhand") if hasattr(caller, "get_equipped") else None
+        is_two_handed = main_weapon and offhand and main_weapon == offhand
+
+        if main_weapon:
+            cat = getattr(main_weapon.db, "weapon_category", "unknown") or "unknown"
+            wtype = getattr(main_weapon.db, "weapon_type", "melee") or "melee"
+            dice = getattr(main_weapon.db, "damage_dice", "?") or "?"
+            if is_two_handed:
+                lines.append(f"  Both Hands: |w{main_weapon.key}|n ({cat}, {wtype}, {dice})")
+            else:
+                lines.append(f"  Main Hand:  |w{main_weapon.key}|n ({cat}, {wtype}, {dice})")
+        else:
+            lines.append(f"  Main Hand:  |x-empty- (unarmed)|n")
+
+        if offhand and not is_two_handed:
+            cat = getattr(offhand.db, "weapon_category", "unknown") or "unknown"
+            wtype = getattr(offhand.db, "weapon_type", "melee") or "melee"
+            dice = getattr(offhand.db, "damage_dice", "?") or "?"
+            if wtype == "shield":
+                block = getattr(offhand.db, "block_chance", 0) or 0
+                armor = getattr(offhand.db, "armor_bonus", 0) or 0
+                lines.append(
+                    f"  Off Hand:   |w{offhand.key}|n ({block}% block, +{armor} armor)"
+                )
+            else:
+                lines.append(f"  Off Hand:   |w{offhand.key}|n ({cat}, {wtype}, {dice})")
+        elif not is_two_handed:
+            lines.append(f"  Off Hand:   |x-empty-|n")
+
+        # --- Proficiency for wielded weapon ---
+        char_class = getattr(caller.db, "char_class", None)
+        race = getattr(caller.db, "race", None)
+
+        if main_weapon and (char_class or race):
+            cat = getattr(main_weapon.db, "weapon_category", None) or "unarmed"
+            lines.append(f"\n|w  {'--- Proficiency ---':^46}|n")
+
+            if char_class:
+                from contrib_dorfin.combat_config import CLASS_PROFICIENCIES, CLASS_OPPOSED
+                cls = char_class.lower()
+                opposed = CLASS_OPPOSED.get(cls, [])
+                proficient = CLASS_PROFICIENCIES.get(cls, [])
+                if cat in opposed:
+                    lines.append(f"  {cat.title()}: |rOpposed|n (-25 attack, -5 damage)")
+                elif cat in proficient:
+                    lines.append(f"  {cat.title()}: |gProficient|n")
+                else:
+                    lines.append(f"  {cat.title()}: |yUnfamiliar|n (-15 attack, -3 damage)")
+
+            if race:
+                from contrib_dorfin.combat_config import RACE_COMBAT_MODS
+                race_mods = RACE_COMBAT_MODS.get(race.lower(), {})
+                race_mod = race_mods.get(cat, 0)
+                if race_mod:
+                    sign = "+" if race_mod > 0 else ""
+                    color = "|g" if race_mod > 0 else "|r"
+                    race_label = race.replace("_", " ").title()
+                    lines.append(
+                        f"  Race ({race_label}): {color}{sign}{race_mod}|n attack with {cat}"
+                    )
+
+        # --- Active milestones for wielded weapons ---
+        weapon_skills = caller.db.weapon_skills or {}
+        shown_cats = set()
+
+        for slot_weapon, slot_label in [(main_weapon, "main"), (offhand, "off")]:
+            if not slot_weapon:
+                continue
+            if is_two_handed and slot_label == "off":
+                continue
+            cat = getattr(slot_weapon.db, "weapon_category", None) or "unarmed"
+            if cat in shown_cats:
+                continue
+            shown_cats.add(cat)
+
+            sk_data = weapon_skills.get(cat, {"xp": 0, "level": 0})
+            sk_level = sk_data.get("level", 0)
+
+            from contrib_dorfin.combat_config import WEAPON_MILESTONES
+            milestones = WEAPON_MILESTONES.get(cat, [])
+            active = [(lvl, name, effect_type, value)
+                      for lvl, effect_type, value, name in milestones
+                      if sk_level >= lvl]
+
+            if active:
+                lines.append(f"\n|w  --- {cat.title()} Perks (Skill {sk_level}) ---|n")
+                for lvl, name, effect_type, value in active:
+                    lines.append(f"  |g[{lvl:>2}] {name}|n — {_describe_effect(effect_type, value)}")
+            elif sk_level > 0:
+                lines.append(f"\n|w  --- {cat.title()} (Skill {sk_level}) ---|n")
+                # Find next milestone
+                upcoming = [(lvl, name) for lvl, _, _, name in milestones if lvl > sk_level]
+                if upcoming:
+                    nxt_lvl, nxt_name = upcoming[0]
+                    lines.append(f"  |xNext perk at level {nxt_lvl}: {nxt_name}|n")
+
+        # Unarmed milestones if no weapon equipped
+        if not main_weapon:
+            cat = "unarmed"
+            sk_data = weapon_skills.get(cat, {"xp": 0, "level": 0})
+            sk_level = sk_data.get("level", 0)
+            from contrib_dorfin.combat_config import WEAPON_MILESTONES
+            milestones = WEAPON_MILESTONES.get(cat, [])
+            active = [(lvl, name, effect_type, value)
+                      for lvl, effect_type, value, name in milestones
+                      if sk_level >= lvl]
+            if active:
+                lines.append(f"\n|w  --- Unarmed Perks (Skill {sk_level}) ---|n")
+                for lvl, name, effect_type, value in active:
+                    lines.append(f"  |g[{lvl:>2}] {name}|n — {_describe_effect(effect_type, value)}")
 
         lines.append(f"|w{'=' * 50}|n")
         caller.msg("\n".join(lines))
